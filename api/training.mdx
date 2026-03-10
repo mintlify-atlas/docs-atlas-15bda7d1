@@ -11,7 +11,7 @@ The training module implements a novel approach to discovering Strassen's algori
 ## Import
 
 ```python
-from train_strassen import (
+from src.training.train_strassen import (
     StrassenOperator,
     train_phase1,
     sparsify,
@@ -112,7 +112,7 @@ def count_active(self, threshold=0.1)
 ```python
 import torch
 import torch.nn as nn
-from train_strassen import StrassenOperator
+from src.training.train_strassen import StrassenOperator
 
 # Create operator
 model = StrassenOperator(rank=8)
@@ -161,7 +161,7 @@ Generates random training batches of 2×2 matrices.
 ### Example
 
 ```python
-from train_strassen import generate_batch
+from src.training.train_strassen import generate_batch
 
 A, B = generate_batch(256, scale=1.0)
 print(A.shape)  # torch.Size([256, 2, 2])
@@ -225,7 +225,7 @@ The training progresses through distinct phases:
 ### Example
 
 ```python
-from train_strassen import train_phase1
+from src.training.train_strassen import train_phase1
 
 # Train with default settings
 model = train_phase1(
@@ -308,7 +308,7 @@ def sparsify(model, target_slots=7)
 ### Example
 
 ```python
-from train_strassen import train_phase1, sparsify
+from src.training.train_strassen import train_phase1, sparsify
 
 # Train to near-optimal
 model = train_phase1(epochs=30000)
@@ -383,7 +383,7 @@ def discretize(model, slots_to_prune)
 ### Example
 
 ```python
-from train_strassen import train_phase1, sparsify, discretize
+from src.training.train_strassen import train_phase1, sparsify, discretize
 
 model = train_phase1()
 model, pruned = sparsify(model)
@@ -438,7 +438,7 @@ c22 = M1 - M2 + M3 + M6
 ### Example
 
 ```python
-from train_strassen import get_canonical_strassen
+from src.training.train_strassen import get_canonical_strassen
 import torch
 
 U, V, W = get_canonical_strassen()
@@ -499,7 +499,7 @@ Verifies correctness of discovered coefficients on random test matrices.
 ### Example
 
 ```python
-from train_strassen import verify, get_canonical_strassen
+from src.training.train_strassen import verify, get_canonical_strassen
 
 U, V, W = get_canonical_strassen()
 success, max_err = verify(U, V, W, n_test=10000)
@@ -552,7 +552,7 @@ Complete training pipeline: Phase 1 → Phase 2 → Phase 3 → Verify → Save.
 ### Example
 
 ```python
-from train_strassen import main
+from src.training.train_strassen import main
 
 success = main()
 if success:
@@ -615,7 +615,7 @@ Saved: /path/to/weights.pt
 
 ```python
 import torch
-from train_strassen import (
+from src.training.train_strassen import (
     StrassenOperator,
     train_phase1,
     sparsify,
@@ -625,7 +625,7 @@ from train_strassen import (
 )
 
 # Option 1: Use main() for complete pipeline
-from train_strassen import main
+from src.training.train_strassen import main
 success = main()
 
 # Option 2: Run phases manually for more control

@@ -11,7 +11,7 @@ The Strassen core module provides the fundamental implementation of Strassen's a
 ## Import
 
 ```python
-from strassen_core import strassen, strassen_2x2, get_coefficients, multiplication_count
+from src.training.strassen_core import strassen, strassen_2x2, get_coefficients, multiplication_count
 ```
 
 ---
@@ -59,7 +59,7 @@ The function:
 
 ```python
 import torch
-from strassen_core import strassen_2x2
+from src.training.strassen_core import strassen_2x2
 
 # Single matrix multiplication
 A = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
@@ -143,7 +143,7 @@ For matrices larger than 2×2, the algorithm:
 
 ```python
 import torch
-from strassen_core import strassen
+from src.training.strassen_core import strassen
 
 # 4x4 multiplication
 X = torch.randn(4, 4)
@@ -237,7 +237,7 @@ c22: M1 - M2 + M3 + M6
 ### Example
 
 ```python
-from strassen_core import get_coefficients
+from src.training.strassen_core import get_coefficients
 import torch
 
 U, V, W = get_coefficients()
@@ -310,7 +310,7 @@ Computes the total number of scalar multiplications performed by the Strassen al
 ### Example
 
 ```python
-from strassen_core import multiplication_count
+from src.training.strassen_core import multiplication_count
 
 # Compare multiplication counts
 for n in [2, 4, 8, 16, 32, 64]:
@@ -336,7 +336,7 @@ for n in [2, 4, 8, 16, 32, 64]:
 
 ```python
 import torch
-from strassen_core import strassen, strassen_2x2, get_coefficients, multiplication_count
+from src.training.strassen_core import strassen, strassen_2x2, get_coefficients, multiplication_count
 
 # 1. Simple 2x2 multiplication
 A = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
