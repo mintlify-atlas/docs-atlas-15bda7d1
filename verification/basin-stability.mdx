@@ -1,0 +1,245 @@
+---
+title: Basin Stability
+description: How the discrete algorithmic solution responds to pruning and noise perturbations
+---
+
+## Overview
+
+Basin stability measures how robust the learned algorithmic structure is to perturbations. The discrete Strassen solution occupies a narrow region of weight space—but within this region, it exhibits surprising resilience to structured perturbations (pruning) while being extremely fragile to random noise.
+
+This dual nature reveals fundamental properties about algorithmic crystallization in neural networks.
+
+## Two Types of Perturbation
+
+The research tests two fundamentally different perturbation types:
+
+1. **Structured pruning**: Removing weights systematically by importance
+2. **Random noise**: Adding Gaussian noise to all weights
+
+These produce dramatically different outcomes, revealing that the basin is **narrow but deep**.
+
+## Stability Under Pruning
+
+The discrete basin remains stable under iterative pruning up to a critical threshold:
+
+<Steps>
+  <Step title="Start with 7 active slots">
+    Begin with the fully discretized Strassen structure
+  </Step>
+  <Step title="Prune by importance">
+    Remove weights with lowest L2 norm iteratively
+  </Step>
+  <Step title="Verify at each step">
+    Check if discretized structure still computes correctly
+  </Step>
+  <Step title="Find collapse threshold">
+    Identify the sparsity level where verification fails
+  </Step>
+</Steps>
+
+### Empirical Results: Pruning Stability
+
+| Sparsity Level | Accuracy | δ(θ) | Status |
+|----------------|----------|------|--------|
+| 0% (baseline) | 100% | < 0.1 | ✓ Stable |
+| 10% | 100% | < 0.1 | ✓ Stable |
+| 20% | 100% | < 0.1 | ✓ Stable |
+| 30% | 100% | < 0.1 | ✓ Stable |
+| 40% | 100% | < 0.1 | ✓ Stable |
+| **50%** | 100% | < 0.1 | ✓ **Stable** |
+| **51%** | — | — | ✗ **Collapse** |
+| 55%+ | Failed | — | ✗ Collapsed |
+
+<Check>The discrete solution remains 100% stable up to 50% sparsity, then collapses sharply at 51%</Check>
+
+This is **not** a gradual degradation—it's a sharp phase transition. The discretization error δ remains below 0.1 at 50% sparsity, confirming weights are still within rounding margin. Then the structure fails completely at 51%.
+
+## Fragility to Random Noise
+
+In stark contrast to pruning stability, the discrete solution is **extremely fragile** to random perturbations:
+
+```python
+def run_noise_stability_test(checkpoint_path, noise_levels=[0.001, 0.005, 0.01, 0.05, 0.1]):
+    """Test stability under Gaussian noise perturbations"""
+    model = load_checkpoint(checkpoint_path)
+    
+    for sigma in noise_levels:
+        successes = 0
+        n_trials = 100
+        
+        for trial in range(n_trials):
+            model_copy = StrassenBilinear(rank=8)
+            model_copy.U.data = model.U.data.clone() + torch.randn_like(model.U.data) * sigma
+            model_copy.V.data = model.V.data.clone() + torch.randn_like(model.V.data) * sigma
+            model_copy.W.data = model.W.data.clone() + torch.randn_like(model.W.data) * sigma
+            
+            S, _ = compute_S_theta(model_copy)
+            successes += S
+        
+        rate = successes / n_trials
+        print(f"  sigma={sigma:.3f}: {rate:.0%} success ({successes}/{n_trials})")
+```
+
+**Source**: `verify_checkpoints.py:226-246`
+
+### Empirical Results: Noise Fragility
+
+| Noise Level (σ) | Success Rate | Trials |
+|-----------------|--------------|--------|
+| 0.001 | **0%** | 0/100 |
+| 0.005 | 0% | 0/100 |
+| 0.01 | 0% | 0/100 |
+| 0.05 | 0% | 0/100 |
+| 0.1 | 0% | 0/100 |
+
+<Warning>Noise of magnitude σ ≥ 0.001 causes **100% discretization failure** across all tested levels</Warning>
+
+## Why This Matters
+
+This extreme fragility is **not a limitation**—it's the fundamental justification for precise engineering of training conditions.
+
+### Narrow Basin Confirmation
+
+The noise sensitivity confirms that discrete algorithmic solutions occupy **narrow basins of attraction** in weight space. Even tiny perturbations (0.1% of typical weight magnitudes) push the system out of the region where rounding preserves correctness.
+
+### Engineering Implications
+
+Navigating toward stable algorithmic structure requires exact engineering control:
+
+- Batch size must be in [24, 128]
+- Weight decay ≥ 1e-4 is essential
+- Training must continue beyond 1000 epochs
+- Symmetric initialization helps
+
+Without these precise conditions, the optimization trajectory won't reach the narrow discretization basin.
+
+## The Polycrystalline Intermediate State
+
+The pruning experiments reveal an intermediate state between crystal and glass:
+
+| State | Description | Properties |
+|-------|-------------|------------|
+| **Crystal** | Fully formed Strassen structure | δ = 0, 7 active slots, κ = 1.000 |
+| **Polycrystal** | Partially pruned but still functional | δ < 0.1, ~3.5 active slots (50% pruned), maintains accuracy |
+| **Glass** | Failed discretization | δ ≈ 0.49, κ = 999999, cannot discretize |
+
+The polycrystalline state demonstrates that the algorithmic structure has **genuine structural integrity**—it can lose half its weights and still function perfectly, as long as the remaining weights stay within the discrete basin.
+
+## Phase Transition Nature
+
+Both transitions exhibit characteristics of **first-order phase transitions**:
+
+### Crystallization (Training)
+
+```
+Glass (κ=999999, δ≈0.49) → Crystal (κ=1.000, δ=0)
+```
+
+No intermediate states exist. The system either crystallizes or remains glass.
+
+### Collapse (Pruning)
+
+```
+Crystal (50% sparse, accurate) → Collapse (51% sparse, failed)
+```
+
+Sharp transition with no gradual degradation.
+
+## Verification Workflow
+
+The complete verification workflow tests both correctness and stability:
+
+<Steps>
+  <Step title="Load checkpoint">
+    Load trained model weights from checkpoint file
+  </Step>
+  <Step title="Compute S(θ) and δ(θ)">
+    Calculate binary success indicator and discretization margin
+  </Step>
+  <Step title="Discretize if δ < 0.1">
+    Round weights to {-1, 0, 1} if within margin
+  </Step>
+  <Step title="Verify 2×2 multiplication">
+    Test discretized coefficients at base scale (relative error < 1e-5)
+  </Step>
+  <Step title="Zero-shot expansion test">
+    Verify at scales 4×4, 8×8, 16×16, 32×32, 64×64
+  </Step>
+  <Step title="Noise stability test">
+    Add Gaussian noise at multiple levels and retest discretization
+  </Step>
+</Steps>
+
+### Example Output
+
+```bash
+$ python verify_checkpoints.py checkpoint_final.pt
+
+Verifying: checkpoint_final.pt
+------------------------------------------------------------
+S(theta) = 1
+delta(theta) = 0.073421
+Active slots = 7
+
+Zero-shot expansion verification:
+    2x2: max_error=1.21e-07, rel_error=1.21e-07 [PASS]
+    4x4: max_error=9.37e-08, rel_error=9.37e-08 [PASS]
+    8x8: max_error=2.99e-07, rel_error=2.99e-07 [PASS]
+   16x16: max_error=5.89e-07, rel_error=5.89e-07 [PASS]
+   32x32: max_error=8.66e-07, rel_error=8.66e-07 [PASS]
+   64x64: max_error=1.69e-06, rel_error=1.69e-06 [PASS]
+
+Result: SUCCESS - Zero-shot expansion verified from 2x2 to 64x64
+
+Noise stability test:
+  sigma=0.001: 0% success (0/100)
+  sigma=0.005: 0% success (0/100)
+  sigma=0.010: 0% success (0/100)
+```
+
+## Implications for Deep Learning
+
+The basin stability findings have broader implications:
+
+### Reproducibility Crisis
+
+<Warning>If a well-defined algorithm like Strassen requires such precise training conditions to emerge, what does this say about reproducibility in deep learning more broadly?</Warning>
+
+Narrow basins containing algorithmic solutions may be much more common than believed. Our inability to reach them consistently may explain many reproducibility failures in the field.
+
+### The Value of Fragility
+
+Fragility transforms from an apparent weakness to a central insight: the extreme sensitivity confirms we're finding **true discrete attractors**, not approximate solutions. A robust solution might generalize well but not represent the exact algorithm.
+
+### Delta as a Compass
+
+The discretization margin δ serves as an early prospecting tool:
+
+- Measure initial entropy of random seeds
+- Run a few training epochs per seed
+- Track which seeds have δ → 0
+- Select seeds heading toward the algorithmic attractor
+
+If κ is temperature, then **δ is our compass** for navigating weight space.
+
+## Stability Metrics Summary
+
+| Metric | Crystal | Polycrystal | Glass |
+|--------|---------|-------------|-------|
+| **δ(θ)** | 0 | < 0.1 | ≈ 0.49 |
+| **κ** | 1.000 | 1.000 | 999999 |
+| **S(θ)** | 1 | 1 | 0 |
+| **Pruning tolerance** | 50% | Variable | N/A |
+| **Noise tolerance** | 0% (σ ≥ 0.001) | 0% | N/A |
+| **Accuracy** | 100% | 100% | Failed |
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Discretization" icon="grid-2" href="/verification/discretization">
+    Learn how weights are rounded to integers
+  </Card>
+  <Card title="Zero-Shot Expansion" icon="arrow-up-right-dots" href="/verification/zero-shot-expansion">
+    See how 2×2 structure transfers to 64×64
+  </Card>
+</CardGroup>

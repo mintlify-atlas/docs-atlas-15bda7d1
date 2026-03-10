@@ -1,80 +1,363 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart
+description: Train a Strassen-grokked model and verify zero-shot transfer in minutes
 ---
 
-## Get started in three steps
+## Get Up and Running
 
-Get your documentation site running locally and make your first customization.
-
-### Step 1: Set up your local environment
-
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
-
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
-
-## Next steps
-
-Now that you have your docs running, explore these key features:
-
-<CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
-</CardGroup>
+This guide will walk you through training a neural network that crystallizes into Strassen's matrix multiplication algorithm, then verify it transfers to larger matrices.
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+This quickstart uses optimal conditions: batch size 32, weight decay 1e-4, and 1000+ epochs. These parameters give you a 68% chance of successful crystallization.
 </Note>
+
+## Prerequisites
+
+Before you begin, make sure you have:
+
+- Python 3.8 or later
+- PyTorch 1.9.0 or later
+- A CUDA-capable GPU (recommended) or CPU
+
+<Steps>
+  <Step title="Clone and Install">
+    First, clone the repository and install dependencies:
+    
+    ```bash
+    git clone https://github.com/grisuno/strass_strassen.git
+    cd strass_strassen
+    chmod +x install.sh
+    ./install.sh
+    ```
+    
+    The install script creates a virtual environment and installs all required packages from `requirements.txt`.
+  </Step>
+  
+  <Step title="Train Your First Model">
+    Let's train a model using the optimal protocol. Create a training script:
+    
+    ```python
+    import torch
+    import torch.nn as nn
+    import torch.optim as optim
+    from pathlib import Path
+
+    torch.manual_seed(42)
+    DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    class StrassenOperator(nn.Module):
+        """Bilinear model for 2x2 matrix multiplication."""
+        
+        def __init__(self, rank=8):
+            super().__init__()
+            self.rank = rank
+            self.U = nn.Parameter(torch.randn(rank, 4) * 0.5)
+            self.V = nn.Parameter(torch.randn(rank, 4) * 0.5)
+            self.W = nn.Parameter(torch.randn(4, rank) * 0.5)
+        
+        def forward(self, A, B):
+            batch = A.shape[0]
+            a = A.reshape(batch, 4)
+            b = B.reshape(batch, 4)
+            left = a @ self.U.T
+            right = b @ self.V.T
+            products = left * right
+            c = products @ self.W.T
+            return c.reshape(batch, 2, 2)
+        
+        def slot_importance(self):
+            u_norm = torch.norm(self.U, dim=1)
+            v_norm = torch.norm(self.V, dim=1)
+            w_norm = torch.norm(self.W, dim=0)
+            return u_norm * v_norm * w_norm
+
+    def generate_batch(n, scale=1.0):
+        A = torch.randn(n, 2, 2, device=DEVICE) * scale
+        B = torch.randn(n, 2, 2, device=DEVICE) * scale
+        return A, B
+
+    # Phase 1: Train with optimal conditions
+    model = StrassenOperator(rank=8).to(DEVICE)
+    optimizer = optim.AdamW(model.parameters(), lr=0.02, weight_decay=1e-4)
+    scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=10000)
+
+    print("Phase 1: Training with thermodynamic grokking...")
+    epochs = 30000
+    batch_size = 32  # Optimal batch size
+
+    for epoch in range(epochs):
+        A, B = generate_batch(batch_size)
+        C_pred = model(A, B)
+        C_true = torch.bmm(A, B)
+        
+        loss = torch.mean((C_pred - C_true) ** 2)
+        
+        optimizer.zero_grad()
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+        optimizer.step()
+        scheduler.step()
+        
+        if epoch % 5000 == 0:
+            with torch.no_grad():
+                err = (C_pred - C_true).abs()
+                acc = (err.reshape(batch_size, -1).max(dim=1)[0] < 1e-3).float().mean().item() * 100
+            active = (model.slot_importance() > 0.1).sum().item()
+            print(f"Epoch {epoch:5d} | Loss: {loss.item():.2e} | Acc: {acc:.1f}% | Active slots: {active}")
+
+    print("\nPhase 1 complete! Model trained.")
+    torch.save(model.state_dict(), "strassen_model.pt")
+    ```
+    
+    <Warning>
+    Training takes 20-30 minutes on a modern GPU. Watch for the "grokking" transition where test accuracy suddenly improves after the training loss plateaus.
+    </Warning>
+  </Step>
+  
+  <Step title="Sparsify to 7 Slots">
+    Phase 2 involves pruning the model from 8 slots to exactly 7 (Strassen's rank):
+    
+    ```python
+    # Phase 2: Sparsification
+    print("\nPhase 2: Sparsifying to 7 slots...")
+    
+    with torch.no_grad():
+        importance = model.slot_importance()
+        _, sorted_idx = importance.sort()
+        # Prune the least important slot
+        slot_to_prune = sorted_idx[0].item()
+        print(f"Pruning slot {slot_to_prune} (importance: {importance[slot_to_prune]:.4f})")
+    
+    # Gradual pruning with retraining
+    optimizer = optim.Adam(model.parameters(), lr=0.005)
+    
+    for step in range(2000):
+        decay = 1.0 - (step / 2000) * 0.99
+        
+        with torch.no_grad():
+            model.U.data[slot_to_prune] *= decay
+            model.V.data[slot_to_prune] *= decay
+            model.W.data[:, slot_to_prune] *= decay
+        
+        A, B = generate_batch(256)
+        C_pred = model(A, B)
+        C_true = torch.bmm(A, B)
+        loss = torch.mean((C_pred - C_true) ** 2)
+        
+        optimizer.zero_grad()
+        loss.backward()
+        # Zero gradients for pruned slot
+        model.U.grad[slot_to_prune] = 0
+        model.V.grad[slot_to_prune] = 0
+        model.W.grad[:, slot_to_prune] = 0
+        optimizer.step()
+    
+    # Final pruning
+    with torch.no_grad():
+        model.U.data[slot_to_prune] = 0
+        model.V.data[slot_to_prune] = 0
+        model.W.data[:, slot_to_prune] = 0
+    
+    print("Sparsification complete! Model now has 7 active slots.")
+    ```
+  </Step>
+  
+  <Step title="Discretize and Verify">
+    Now discretize the weights to integers and verify the structure:
+    
+    ```python
+    # Phase 3: Discretization
+    print("\nPhase 3: Discretizing weights...")
+    
+    def discretize(tensor, target_set=[-1, 0, 1]):
+        """Round weights to nearest integer in target set."""
+        rounded = torch.round(tensor).clamp(-1, 1)
+        return rounded
+    
+    with torch.no_grad():
+        U_discrete = discretize(model.U)
+        V_discrete = discretize(model.V)
+        W_discrete = discretize(model.W)
+        
+        # Check discretization margin
+        delta = max(
+            (model.U - U_discrete).abs().max().item(),
+            (model.V - V_discrete).abs().max().item(),
+            (model.W - W_discrete).abs().max().item()
+        )
+        print(f"Discretization margin δ: {delta:.4f}")
+        
+        if delta < 0.1:
+            print("✓ Weights are within rounding margin!")
+        else:
+            print("✗ Weights too far from integers. Training may have failed.")
+    
+    # Apply discretized weights
+    model.U.data = U_discrete
+    model.V.data = V_discrete
+    model.W.data = W_discrete
+    
+    # Verify at 2x2
+    A_test, B_test = generate_batch(1000)
+    C_pred = model(A_test, B_test)
+    C_true = torch.bmm(A_test, B_test)
+    rel_error = (C_pred - C_true).abs().max().item()
+    
+    print(f"\n2×2 verification error: {rel_error:.2e}")
+    if rel_error < 1e-5:
+        print("✓ Discretized model passes 2×2 verification!")
+    else:
+        print("✗ Discretized model failed verification.")
+    ```
+  </Step>
+  
+  <Step title="Test Zero-Shot Transfer">
+    The moment of truth - test if the structure transfers to larger matrices:
+    
+    ```python
+    # Zero-shot expansion to larger sizes
+    from src.training.strassen_core import strassen
+    
+    print("\nTesting zero-shot transfer...\n")
+    
+    # Save discretized weights for the strassen function
+    torch.save({
+        'U': model.U.cpu(),
+        'V': model.V.cpu(),
+        'W': model.W.cpu()
+    }, 'src/training/weights.pt')
+    
+    test_sizes = [2, 4, 8, 16, 32, 64]
+    
+    for n in test_sizes:
+        # Generate test matrices
+        X = torch.randn(n, n)
+        Y = torch.randn(n, n)
+        
+        # Compute using learned Strassen
+        C_strassen = strassen(X, Y)
+        
+        # Compute ground truth
+        C_true = torch.matmul(X, Y)
+        
+        # Measure error
+        rel_error = (C_strassen - C_true).abs().max().item() / C_true.abs().max().item()
+        
+        status = "✓ Pass" if rel_error < 1e-5 else "✗ Fail"
+        print(f"{n}×{n}: {rel_error:.2e} - {status}")
+    ```
+    
+    Expected output:
+    ```
+    2×2: 1.21e-07 - ✓ Pass
+    4×4: 9.37e-08 - ✓ Pass
+    8×8: 2.99e-07 - ✓ Pass
+    16×16: 5.89e-07 - ✓ Pass
+    32×32: 8.66e-07 - ✓ Pass
+    64×64: 1.69e-06 - ✓ Pass
+    ```
+  </Step>
+</Steps>
+
+## Using the Pre-trained Model
+
+If you want to skip training and use a pre-trained model:
+
+```python
+from src.training.strassen_core import strassen, get_coefficients
+import torch
+
+# Use the pre-trained Strassen model
+X = torch.randn(64, 64)
+Y = torch.randn(64, 64)
+
+C = strassen(X, Y)
+
+# Verify correctness
+C_true = torch.matmul(X, Y)
+rel_error = (C - C_true).abs().max() / C_true.abs().max()
+print(f"Relative error: {rel_error:.2e}")
+
+# Inspect the learned coefficients
+U, V, W = get_coefficients()
+print(f"\nU tensor (input A coefficients):\n{U}")
+print(f"\nV tensor (input B coefficients):\n{V}")
+print(f"\nW tensor (output C coefficients):\n{W}")
+```
+
+## Understanding the Results
+
+<CardGroup cols={2}>
+  <Card title="Success Indicators" icon="check">
+    - Discretization margin δ < 0.1
+    - All 7 slots have integer weights in {-1, 0, 1}
+    - 2×2 verification error < 1e-5
+    - Zero-shot transfer works up to 64×64
+  </Card>
+  
+  <Card title="Failure Modes" icon="xmark">
+    - δ > 0.1: weights didn't converge to integers
+    - Active slots ≠ 7: pruning failed
+    - High verification error: structure doesn't match Strassen
+    - Transfer fails: learned a local minimum, not the algorithm
+  </Card>
+</CardGroup>
+
+## What If Training Fails?
+
+Remember, even under optimal conditions, the success rate is 68%. If your run fails:
+
+1. **Try a different random seed**: Change `torch.manual_seed(42)` to another value
+2. **Increase training time**: Go beyond 30,000 epochs
+3. **Adjust batch size**: Try values in [24, 64, 128]
+4. **Check for grokking**: Look for the characteristic sudden improvement in test accuracy
+
+<Note>
+The 32% failure rate is inherent to the narrow basin of attraction for the discrete algorithmic structure. This is a fundamental property, not a bug.
+</Note>
+
+## Counting Multiplications
+
+One of the benefits of Strassen's algorithm is reduced computational cost:
+
+```python
+from src.training.strassen_core import multiplication_count
+
+for n in [2, 4, 8, 16, 32, 64]:
+    strassen_ops = multiplication_count(n)
+    standard_ops = n ** 3
+    speedup = standard_ops / strassen_ops
+    print(f"{n}×{n}: Strassen={strassen_ops}, Standard={standard_ops}, Speedup={speedup:.2f}x")
+```
+
+Output:
+```
+2×2: Strassen=7, Standard=8, Speedup=1.14x
+4×4: Strassen=49, Standard=64, Speedup=1.31x
+8×8: Strassen=343, Standard=512, Speedup=1.49x
+16×16: Strassen=2401, Standard=4096, Speedup=1.71x
+32×32: Strassen=16807, Standard=32768, Speedup=1.95x
+64×64: Strassen=117649, Standard=262144, Speedup=2.23x
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Understand the Theory" icon="book" href="/concepts/two-phase-protocol">
+    Learn why the two-phase protocol works and the thermodynamics behind grokking
+  </Card>
+  
+  <Card title="Training Dynamics" icon="chart-line" href="/training/optimal-conditions">
+    Explore batch size effects, weight decay, and the phase diagram
+  </Card>
+  
+  <Card title="Verification" icon="magnifying-glass" href="/verification/discretization">
+    Deep dive into discretization margins, structure verification, and basin stability
+  </Card>
+  
+  <Card title="Advanced Topics" icon="flask" href="/advanced/thermodynamic-metrics">
+    Learn about κ, δ, effective temperature, and other thermodynamic metrics
+  </Card>
+</CardGroup>
+
+Congratulations! You've successfully trained and verified a neural network that crystallized into Strassen's algorithm.

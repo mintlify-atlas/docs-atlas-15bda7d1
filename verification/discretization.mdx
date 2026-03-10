@@ -1,0 +1,138 @@
+---
+title: Discretization
+description: Learn how trained weights are discretized to exact integer values in {-1, 0, 1} to verify algorithmic structure
+---
+
+## Overview
+
+Discretization is the process of rounding continuous weight values to exact integers after training. For Strassen matrix multiplication, this means projecting all 21 learned coefficients (7 slots × 3 tensors U, V, W) onto the discrete set {-1, 0, 1}.
+
+This operation serves as the critical test: if the rounded network still computes correct matrix multiplication, the algorithm is genuinely present in the weights.
+
+## The Discretization Operator
+
+The discretization operator Q(θ) performs post-hoc projection of coefficients to a discrete grid:
+
+```python
+def get_discrete_coefficients(model):
+    """Round and clamp weights to {-1, 0, 1}"""
+    U_disc = torch.round(torch.clamp(model.U.data, -1, 1))
+    V_disc = torch.round(torch.clamp(model.V.data, -1, 1))
+    W_disc = torch.round(torch.clamp(model.W.data, -1, 1))
+    return U_disc, V_disc, W_disc
+```
+
+**Source**: `verify_checkpoints.py:44-48`
+
+The operation consists of two steps:
+1. **Clamp**: Constrain values to [-1, 1]
+2. **Round**: Map to nearest integer in {-1, 0, 1}
+
+## Discretization Margin δ(θ)
+
+The discretization margin measures how close weights are to their target integer values:
+
+```
+δ(θ) = ||θ - Q(θ)||∞
+```
+
+This is the maximum distance from any weight to its nearest integer. Lower values indicate weights are naturally close to integers, making discretization safe.
+
+### Computing Delta
+
+```python
+def compute_delta(model):
+    """Compute L-infinity discretization margin"""
+    with torch.no_grad():
+        U = model.U.data
+        V = model.V.data
+        W = model.W.data
+        
+        U_q = torch.round(torch.clamp(U, -1, 1))
+        V_q = torch.round(torch.clamp(V, -1, 1))
+        W_q = torch.round(torch.clamp(W, -1, 1))
+        
+        delta_U = (U - U_q).abs().max().item()
+        delta_V = (V - V_q).abs().max().item()
+        delta_W = (W - W_q).abs().max().item()
+        
+        return max(delta_U, delta_V, delta_W)
+```
+
+**Source**: `verify_checkpoints.py:51-65`
+
+## Success Criteria
+
+A run achieves **discretization success** if and only if:
+
+<Steps>
+  <Step title="All weights within margin">
+    All 21 weight values satisfy `δ(θ) < 0.1` (within 0.1 of target integers)
+  </Step>
+  <Step title="Structural match">
+    The rounded values match a valid Strassen coefficient structure
+  </Step>
+  <Step title="Verification passes">
+    The discretized model produces correct multiplication at 2×2 with relative error < 1e-5
+  </Step>
+</Steps>
+
+**Definition**: A solution is "discretizable" if δ(θ) ≤ 0.1. This threshold represents the narrow basin where rounding preserves correctness.
+
+### The Binary Success Indicator S(θ)
+
+```python
+def compute_S_theta(model):
+    """Binary success indicator: 1 if discretization succeeds, 0 otherwise"""
+    delta = compute_delta(model)
+    
+    if delta >= 0.1:
+        return 0, delta
+    
+    U, V, W = model.get_discrete_coefficients()
+    error, rel_error = verify_2x2(U, V, W)
+    
+    success = rel_error < 1e-5
+    
+    return int(success), delta
+```
+
+**Source**: `verify_checkpoints.py:152-163`
+
+S(θ) converts "crystallization" into a measurable order parameter:
+- **S(θ) = 1**: Weights successfully discretized to valid Strassen structure
+- **S(θ) = 0**: Discretization failed or verification error too high
+
+## Two Phases of the Discrete Solution
+
+Empirical data from 245 training runs reveals two distinct phases:
+
+| Phase | δ(θ) | κ | Success Rate |
+|-------|------|---|-------------|
+| **Crystal** | δ = 0 | κ = 1.000 | 68% (133/195 runs) |
+| **Glass** | δ ≈ 0.49 | κ = 999999 | 32% failed runs |
+
+The transition is abrupt—there are no intermediate checkpoints. This confirms a **first-order phase transition** where the system either crystallizes into the algorithmic structure or remains trapped in an amorphous glass state.
+
+## What Discretization Demonstrates
+
+Discretization success proves the network learned genuine algorithmic structure rather than simply memorizing patterns:
+
+<Check>If a network with continuous weights can be rounded to exact integers and still compute correctly, the algorithm is present in the weights</Check>
+
+<Warning>Discretization is extremely fragile: weights must land within a narrow δ ≤ 0.1 neighborhood. This extreme sensitivity justifies precise engineering of training conditions.</Warning>
+
+## Why This Matters
+
+Without discretization, a network might generalize well on test data while still occupying a local minimum that doesn't encode the true algorithm. Discretization forces the network to commit to exact integer coefficients—an unambiguous verification that cannot be faked by approximate solutions.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Zero-Shot Expansion" icon="arrow-up-right-dots" href="/verification/zero-shot-expansion">
+    Learn how discretized 2×2 weights transfer to 64×64 matrices
+  </Card>
+  <Card title="Basin Stability" icon="mountain" href="/verification/basin-stability">
+    Explore how stable the discrete solution is under perturbations
+  </Card>
+</CardGroup>

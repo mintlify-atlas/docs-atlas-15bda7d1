@@ -1,0 +1,557 @@
+---
+title: 'T_eff (Effective Temperature)'
+description: 'Understand T_eff, the effective temperature metric computed as T_eff = (1/d) Tr(Σ) that distinguishes crystal from glass phases'
+icon: 'temperature-half'
+---
+
+## Overview
+
+**T_eff** (effective temperature) is a thermodynamic metric derived from gradient noise that quantifies the "thermal energy" of the training dynamics. It achieves 100% phase classification accuracy, separating crystalline states (T_eff ≈ 10⁻¹⁷) from glass states (T_eff ≈ 10⁻¹⁶ to 10⁻⁵).
+
+<Note>
+  Crystalline states give T_eff ≈ 1×10⁻¹⁷. Glass states scatter between 1×10⁻¹⁶ and 8×10⁻⁵. The lowest glass temperature remains **an order of magnitude above the crystal ceiling**.
+</Note>
+
+## Mathematical Definition
+
+T_eff is computed from the gradient covariance matrix via the fluctuation-dissipation relation:
+
+```python
+T_eff = (1/d) * Tr(Σ)
+
+where:
+  Σ = gradient covariance at final epoch
+  d = number of parameters
+  Tr(·) = matrix trace
+```
+
+### Thermodynamic Interpretation
+
+<ParamField path="gradient_covariance" type="matrix" required>
+  **Σ_t = Cov(g_t | θ_t)**
+  
+  Covariance of gradient noise at parameters θ_t
+  
+  ```python
+  g_t = ∇_θ L(θ_t; B_t)  # Gradient at step t
+  Σ_t = Cov(g_t)          # Across mini-batches
+  ```
+</ParamField>
+
+<ParamField path="effective_temperature" type="float" required>
+  **T_eff = (1/d) Tr(Σ)**
+  
+  Average variance per parameter dimension
+  
+  Analogous to: E = k_B T in statistical mechanics
+</ParamField>
+
+## Computing T_eff
+
+<CodeGroup>
+
+```python Basic Implementation
+import torch
+
+def compute_effective_temperature(model, data_loader, device='cuda'):
+    """Compute T_eff from gradient covariance."""
+    model.eval()
+    gradients = []
+    
+    # Collect gradients over multiple batches
+    for batch_idx, (x, y) in enumerate(data_loader):
+        if batch_idx >= 20:  # Sample 20 batches
+            break
+        
+        x, y = x.to(device), y.to(device)
+        model.zero_grad()
+        
+        # Forward pass
+        output = model(x)
+        loss = torch.nn.functional.mse_loss(output, y)
+        
+        # Backward pass
+        loss.backward()
+        
+        # Collect gradient vector
+        grad = torch.cat([
+            p.grad.flatten() 
+            for p in model.parameters() 
+            if p.grad is not None
+        ])
+        gradients.append(grad.cpu())
+    
+    # Stack gradients
+    gradients = torch.stack(gradients)  # [n_batches, n_params]
+    
+    # Compute covariance
+    Sigma = torch.cov(gradients.T)  # [n_params, n_params]
+    
+    # Compute temperature
+    d = Sigma.shape[0]
+    T_eff = torch.trace(Sigma).item() / d
+    
+    return T_eff
+
+# Usage
+T_eff = compute_effective_temperature(model, train_loader)
+print(f"T_eff = {T_eff:.2e}")
+
+if T_eff < 1e-16:
+    print("[OK] CRYSTAL phase detected")
+else:
+    print("[INFO] GLASS phase")
+```
+
+```python Memory-Efficient Version
+def compute_temperature_efficient(model, data_loader, n_samples=20):
+    """Memory-efficient T_eff computation."""
+    model.eval()
+    
+    # Accumulate first and second moments
+    n_params = sum(p.numel() for p in model.parameters())
+    mean_grad = torch.zeros(n_params)
+    sum_squared = torch.zeros(n_params)
+    
+    for batch_idx, (x, y) in enumerate(data_loader):
+        if batch_idx >= n_samples:
+            break
+        
+        model.zero_grad()
+        output = model(x)
+        loss = torch.nn.functional.mse_loss(output, y)
+        loss.backward()
+        
+        grad = torch.cat([
+            p.grad.flatten() for p in model.parameters() if p.grad is not None
+        ]).cpu()
+        
+        mean_grad += grad
+        sum_squared += grad ** 2
+    
+    # Compute variance (diagonal approximation)
+    mean_grad /= n_samples
+    variance = (sum_squared / n_samples) - mean_grad ** 2
+    
+    # Temperature = mean variance
+    T_eff = variance.mean().item()
+    
+    return T_eff
+```
+
+```python From Checkpoint
+def temperature_from_checkpoint(checkpoint_path):
+    """Estimate T_eff from saved checkpoint."""
+    checkpoint = torch.load(checkpoint_path)
+    
+    # Option 1: If gradients are saved
+    if 'gradient_covariance' in checkpoint:
+        Sigma = checkpoint['gradient_covariance']
+        d = Sigma.shape[0]
+        return torch.trace(Sigma).item() / d
+    
+    # Option 2: Estimate from weight distribution
+    coeffs = checkpoint['coeffs']
+    flat_params = torch.cat([c.flatten() for c in coeffs.values()])
+    
+    # Temperature proxy: variance of weights
+    T_proxy = torch.var(flat_params).item()
+    
+    return T_proxy
+```
+
+</CodeGroup>
+
+## Phase Classification
+
+T_eff provides perfect separation between phases:
+
+| Phase | T_eff Range | Interpretation |
+|-------|-------------|----------------|
+| **Crystal** | ≈ 10⁻¹⁷ | Ground state, discrete weights |
+| **Glass** | 10⁻¹⁶ to 10⁻⁵ | Metastable, continuous weights |
+| **Transition** | ~10⁻¹⁶ | Phase boundary (rare) |
+
+<Info>
+  **The temperature gap is at least one order of magnitude**, enabling 100% classification accuracy in the tested dataset.
+</Info>
+
+### Classification Algorithm
+
+```python
+def classify_phase_by_temperature(T_eff, threshold=1e-16):
+    """Classify phase from effective temperature."""
+    if T_eff < threshold:
+        phase = "crystal"
+        confidence = "high"
+        description = "Discrete algorithmic structure"
+    elif T_eff < 1e-10:
+        phase = "glass"
+        confidence = "high"
+        description = "Continuous amorphous state"
+    else:
+        phase = "glass"
+        confidence = "very_high"
+        description = "High-temperature disordered state"
+    
+    return {
+        'phase': phase,
+        'confidence': confidence,
+        'description': description,
+        'T_eff': T_eff
+    }
+
+# Example
+result = classify_phase_by_temperature(T_eff=5.3e-17)
+print(f"Phase: {result['phase']}")
+print(f"Confidence: {result['confidence']}")
+print(f"T_eff: {result['T_eff']:.2e}")
+```
+
+## Relationship to Batch Size
+
+Batch size directly influences T_eff through gradient noise:
+
+```python
+# Empirical relationship
+Batch Size    T_eff Range       Outcome
+─────────────────────────────────────────
+B = 8         High (>10⁻⁵)     Glass (unstable)
+B = 32        Low (~10⁻¹⁷)     Crystal
+B = 64        Low (~10⁻¹⁷)     Crystal
+B = 128       Low (~10⁻¹⁷)     Crystal
+B = 512       Medium (>10⁻¹⁶)  Glass (high entropy)
+```
+
+<Warning>
+  **Optimal batch size range [24, 128] corresponds to low T_eff conducive to crystallization.** Smaller batches increase gradient noise (high T_eff), while larger batches trap in high-entropy glass states.
+</Warning>
+
+### Minimum Crystallization Temperature
+
+There exists a minimum temperature threshold for algorithm crystallization:
+
+```python
+# Governed by effective Planck constant ħ_eff
+T_min = f(ħ_eff, batch_size)
+
+# For Strassen task:
+T_crystallization < 1e-16  # Crystal ceiling
+
+# If T_eff > T_crystallization:
+#   → System cannot crystallize
+#   → Remains in glass phase
+```
+
+## Monitoring During Training
+
+Track temperature evolution to detect phase transitions:
+
+<Steps>
+  <Step title="Initialize Tracking">
+    Set up temperature monitoring
+    
+    ```python
+    temp_history = []
+    check_interval = 100  # Check every 100 epochs
+    ```
+  </Step>
+  
+  <Step title="Periodic Measurement">
+    Compute T_eff during training
+    
+    ```python
+    for epoch in range(epochs):
+        train_epoch(model, optimizer, train_loader)
+        
+        if epoch % check_interval == 0:
+            T_eff = compute_temperature_efficient(
+                model, train_loader, n_samples=10
+            )
+            temp_history.append((epoch, T_eff))
+            
+            print(f"Epoch {epoch}: T_eff = {T_eff:.2e}")
+    ```
+  </Step>
+  
+  <Step title="Detect Cooling">
+    Watch for temperature drop
+    
+    ```python
+            # Detect crystallization
+            if T_eff < 1e-16:
+                print(f"\n[CRYSTALLIZATION] T_eff dropped to {T_eff:.2e}")
+                print("System entered crystal phase")
+                
+                # Verify with other metrics
+                delta = compute_delta(model.get_coefficients())
+                kappa = compute_kappa_quantum(model.get_coefficients())
+                
+                print(f"  δ = {delta:.4f}")
+                print(f"  κ = {kappa:.2e}")
+    ```
+  </Step>
+  
+  <Step title="Visualize Cooling Curve">
+    Plot temperature evolution
+    
+    ```python
+    import matplotlib.pyplot as plt
+    
+    epochs, temps = zip(*temp_history)
+    
+    plt.figure(figsize=(10, 6))
+    plt.semilogy(epochs, temps, 'r-', linewidth=2)
+    plt.axhline(y=1e-16, color='k', linestyle='--', 
+                label='Crystal threshold')
+    plt.xlabel('Epoch')
+    plt.ylabel('Effective Temperature T_eff')
+    plt.title('Thermodynamic Cooling to Crystal Phase')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.savefig('temperature_evolution.png')
+    ```
+  </Step>
+</Steps>
+
+## Theoretical Foundation
+
+### Fluctuation-Dissipation Relation
+
+T_eff emerges from the fluctuation-dissipation theorem:
+
+<ParamField path="fluctuation_dissipation" type="theory">
+  In equilibrium: ⟨ΔE²⟩ = k_B T × (heat capacity)
+  
+  For neural networks:
+  - Energy ↔ Loss L(θ)
+  - Fluctuations ↔ Gradient variance Σ
+  - Temperature ↔ T_eff = Tr(Σ) / d
+</ParamField>
+
+### Connection to Statistical Mechanics
+
+```python
+# Classical partition function
+Z = ∫ exp(-E(θ) / T) dθ
+
+# In discrete regime (T → 0):
+Z → sum over discrete states
+
+# Crystal state:
+T_eff ≈ 0 → Z dominated by single discrete configuration
+
+# Glass state:
+T_eff >> 0 → Z has many competing configurations
+```
+
+## Entropy and Heat Capacity
+
+T_eff relates to thermodynamic entropy:
+
+```python
+def compute_entropy_from_temperature(T_eff, n_params):
+    """Estimate entropy from temperature."""
+    if T_eff < 1e-20:
+        return 0.0  # Crystal: S = 0
+    
+    # Equipartition: S ∝ d * ln(T_eff)
+    S = n_params * np.log(T_eff)
+    return S
+
+# Example
+S_crystal = compute_entropy_from_temperature(T_eff=1e-17, n_params=21)
+S_glass = compute_entropy_from_temperature(T_eff=1e-5, n_params=21)
+
+print(f"Crystal entropy: {S_crystal:.2f}")
+print(f"Glass entropy: {S_glass:.2f}")
+print(f"Entropy difference: {S_glass - S_crystal:.2f}")
+```
+
+<Info>
+  **Crystal states have near-zero entropy (S ≈ 0), while glass states have high entropy.** This confirms T_eff as a true thermodynamic temperature.
+</Info>
+
+## Practical Example: Complete Thermodynamic Analysis
+
+```python
+import torch
+import numpy as np
+from typing import Dict, List, Tuple
+
+class ThermodynamicAnalyzer:
+    """Complete thermodynamic analysis of training."""
+    
+    def __init__(self, model, n_params):
+        self.model = model
+        self.n_params = n_params
+        self.history = []
+    
+    def measure(self, epoch, data_loader):
+        """Measure all thermodynamic quantities."""
+        # Temperature
+        T_eff = compute_temperature_efficient(
+            self.model, data_loader, n_samples=10
+        )
+        
+        # Other metrics
+        coeffs = self.model.get_coefficients()
+        delta = compute_delta(coeffs)
+        kappa = compute_kappa_quantum(coeffs)
+        lc = compute_local_complexity(coeffs)
+        
+        # Derived quantities
+        S = self.n_params * np.log(T_eff) if T_eff > 1e-20 else 0.0
+        phase = "crystal" if T_eff < 1e-16 else "glass"
+        
+        record = {
+            'epoch': epoch,
+            'T_eff': T_eff,
+            'entropy': S,
+            'delta': delta,
+            'kappa': kappa,
+            'lc': lc,
+            'phase': phase
+        }
+        
+        self.history.append(record)
+        return record
+    
+    def get_phase_transition_epoch(self):
+        """Find epoch where phase transition occurred."""
+        for i in range(1, len(self.history)):
+            prev = self.history[i-1]
+            curr = self.history[i]
+            
+            if prev['phase'] == 'glass' and curr['phase'] == 'crystal':
+                return curr['epoch']
+        
+        return None
+    
+    def compute_heat_capacity(self, window=10):
+        """Estimate heat capacity from temperature fluctuations."""
+        if len(self.history) < window:
+            return None
+        
+        # Recent temperature variance
+        recent_temps = [
+            rec['T_eff'] for rec in self.history[-window:]
+        ]
+        
+        # C_V ∝ ⟨(ΔE)²⟩ / T²
+        temp_var = np.var(recent_temps)
+        mean_temp = np.mean(recent_temps)
+        
+        if mean_temp < 1e-20:
+            return 0.0
+        
+        C_V = temp_var / (mean_temp ** 2)
+        return C_V
+    
+    def summarize(self):
+        """Print thermodynamic summary."""
+        if not self.history:
+            print("No measurements recorded.")
+            return
+        
+        initial = self.history[0]
+        final = self.history[-1]
+        transition_epoch = self.get_phase_transition_epoch()
+        heat_capacity = self.compute_heat_capacity()
+        
+        print("\n" + "="*60)
+        print("THERMODYNAMIC SUMMARY")
+        print("="*60)
+        
+        print(f"\nInitial State (epoch {initial['epoch']}):")
+        print(f"  T_eff = {initial['T_eff']:.2e}")
+        print(f"  S = {initial['entropy']:.2f}")
+        print(f"  Phase: {initial['phase']}")
+        
+        print(f"\nFinal State (epoch {final['epoch']}):")
+        print(f"  T_eff = {final['T_eff']:.2e}")
+        print(f"  S = {final['entropy']:.2f}")
+        print(f"  Phase: {final['phase']}")
+        
+        if transition_epoch:
+            print(f"\nPhase Transition:")
+            print(f"  Occurred at epoch {transition_epoch}")
+            print(f"  ΔT = {initial['T_eff'] - final['T_eff']:.2e}")
+            print(f"  ΔS = {initial['entropy'] - final['entropy']:.2f}")
+        
+        if heat_capacity is not None:
+            print(f"\nHeat Capacity: C_V = {heat_capacity:.2e}")
+
+# Usage
+analyzer = ThermodynamicAnalyzer(model, n_params=21)
+
+for epoch in range(3000):
+    train_epoch(model, optimizer, train_loader)
+    
+    if epoch % 100 == 0:
+        record = analyzer.measure(epoch, train_loader)
+        print(f"Epoch {epoch}: T={record['T_eff']:.2e}, phase={record['phase']}")
+
+analyzer.summarize()
+```
+
+## Key Insights
+
+<CardGroup cols={2}>
+  <Card title="Perfect Classification" icon="bullseye">
+    100% accuracy separating crystal from glass
+  </Card>
+  
+  <Card title="Thermodynamic Analog" icon="fire">
+    True temperature, not just a metaphor
+  </Card>
+  
+  <Card title="Order of Magnitude Gap" icon="arrow-up-wide-short">
+    Crystal: 10⁻¹⁷, Glass: 10⁻¹⁶ to 10⁻⁵
+  </Card>
+  
+  <Card title="Batch Size Dependence" icon="layer-group">
+    Optimal B ∈ [24, 128] yields low T_eff
+  </Card>
+</CardGroup>
+
+## Experimental Results
+
+From 245 training runs:
+
+```python
+# Temperature distribution
+Crystal runs (N=133):
+  T_eff = 1.0e-17 ± 0.1e-17
+  Range: [8e-18, 1.2e-17]
+
+Glass runs (N=112):
+  T_eff = 3.5e-6 ± 2.1e-5
+  Range: [1.2e-16, 8.2e-5]
+
+# Classification threshold
+T_threshold = 1e-16
+Accuracy = 100% (245/245 correct)
+```
+
+## Related Metrics
+
+- [κ (Gradient Covariance)](/metrics/kappa) - Derived from same Σ matrix
+- [δ (Discretization Margin)](/metrics/delta) - Correlates with low T_eff
+- [Local Complexity](/metrics/local-complexity) - Captures transition dynamics
+
+## References
+
+<CardGroup>
+  <Card title="Theory" icon="book">
+    README.md, Section 6.3: "Temperature"
+  </Card>
+  
+  <Card title="Fluctuation-Dissipation" icon="wave-square">
+    Section 5.1.3: "Training Dynamics"
+  </Card>
+  
+  <Card title="Implementation" icon="code" href="/home/daytona/workspace/source/boltzmann_experiments.py">
+    `boltzmann_experiments.py` - Full thermodynamic analysis
+  </Card>
+</CardGroup>

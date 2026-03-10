@@ -1,0 +1,227 @@
+---
+title: "Crystallography Analysis"
+description: "API reference for phase characterization and crystal structure analysis functions"
+---
+
+## Overview
+
+The crystallography module provides tools for analyzing the phase structure of neural network checkpoints, particularly for identifying crystal-like and glass-like states in trained models.
+
+## Core Classes
+
+### StrassenCrystallographer
+
+Main class for running comprehensive crystallographic analysis on model checkpoints.
+
+```python
+from crystallography import StrassenCrystallographer
+
+crystallographer = StrassenCrystallographer(
+    checkpoint_path="checkpoints/model.pt",
+    device="cpu"
+)
+
+report = crystallographer.run_full_analysis()
+```
+
+<ParamField path="checkpoint_path" type="str" required>
+  Path to the PyTorch checkpoint file (.pt) to analyze
+</ParamField>
+
+<ParamField path="device" type="str" default="cpu">
+  Device to load the model on ('cpu' or 'cuda')
+</ParamField>
+
+**Returns:** Dictionary containing comprehensive analysis results including:
+- `checkpoint`: Original checkpoint path
+- `grade`: Crystal quality grade (e.g., "Cristal Óptico", "Cristal Industrial")
+- `purity_index`: Overall purity score [0.0-1.0]
+- `component_scores`: Individual metric scores (kappa, delta, resilience, invariance)
+- `metrics`: Raw metric values (kappa, delta, lc)
+- `expansion`: Structure verification results
+
+### run_full_analysis
+
+Executes complete crystallographic analysis pipeline.
+
+```python
+report = crystallographer.run_full_analysis()
+
+print(f"Purity Index: {report['purity_index']:.3f}")
+print(f"Grade: {report['grade']}")
+print(f"Delta: {report['metrics']['delta']:.4f}")
+```
+
+**Returns:** Complete analysis report with metrics and classification
+
+## Metrics Functions
+
+### CrystallographyMetrics.compute_kappa
+
+Computes gradient covariance condition number (κ) measuring landscape sharpness.
+
+```python
+from crystallography import CrystallographyMetrics
+
+kappa = CrystallographyMetrics.compute_kappa(
+    model=model,
+    dataloader=dataloader_gen(),
+    num_batches=5
+)
+```
+
+<ParamField path="model" type="nn.Module" required>
+  PyTorch model to analyze
+</ParamField>
+
+<ParamField path="dataloader" type="Iterator" required>
+  Iterator yielding (A, B, C) training batches
+</ParamField>
+
+<ParamField path="num_batches" type="int" default="5">
+  Number of batches to sample for gradient computation
+</ParamField>
+
+**Returns:** `float` - Condition number κ. Returns `inf` for singular covariance (perfect crystals).
+
+### CrystallographyMetrics.compute_discretization_margin
+
+Computes discretization margin (δ) measuring distance to integer lattice.
+
+```python
+coeffs = model.get_coefficients()
+delta = CrystallographyMetrics.compute_discretization_margin(coeffs)
+
+if delta < 0.01:
+    print("Perfect crystal (δ < 0.01)")
+elif delta < 0.1:
+    print("Industrial crystal (δ < 0.1)")
+```
+
+<ParamField path="coeffs" type="Dict[str, torch.Tensor]" required>
+  Dictionary with keys 'U', 'V', 'W' containing model coefficient tensors
+</ParamField>
+
+**Returns:** `float` - Maximum absolute deviation from nearest integer across all coefficients
+
+### CrystallographyMetrics.compute_local_complexity
+
+Computes local complexity (LC) measuring active parameter fraction.
+
+```python
+lc = CrystallographyMetrics.compute_local_complexity(model)
+```
+
+<ParamField path="model" type="nn.Module" required>
+  PyTorch model to analyze
+</ParamField>
+
+**Returns:** `float` - Fraction of parameters above significance threshold [0.0-1.0]
+
+## Phase Analysis
+
+### CrystalPurityIndex
+
+Computes comprehensive purity index and assigns crystal grade.
+
+```python
+from crystallography import CrystalPurityIndex
+
+purity_calc = CrystalPurityIndex(
+    model=model,
+    diffraction_results=diffraction_results,
+    resilience_results=resilience_results,
+    metrics_results=metrics_results
+)
+
+purity_report = purity_calc.compute()
+```
+
+<ParamField path="model" type="nn.Module" required>
+  PyTorch model being analyzed
+</ParamField>
+
+<ParamField path="diffraction_results" type="Dict" required>
+  Results from `StrassenDiffractionTest.test_gauge_invariance()`
+</ParamField>
+
+<ParamField path="resilience_results" type="Dict" required>
+  Results from `BasinResilienceSpectrometer.measure_resilience_spectrum()`
+</ParamField>
+
+<ParamField path="metrics_results" type="Dict" required>
+  Dictionary with keys 'kappa', 'delta', 'lc'
+</ParamField>
+
+**Returns:** Dictionary containing:
+- `index`: Overall purity score [0.0-1.0]
+- `grade`: Crystal classification string
+- `component_scores`: Individual normalized metric scores
+
+## Output Structure
+
+### Analysis Report Format
+
+```json
+{
+  "checkpoint": "checkpoints/model.pt",
+  "grade": "Cristal Óptico (δ<0.01, estructura perfecta)",
+  "purity_index": 0.923,
+  "component_scores": {
+    "kappa_score": 1.0,
+    "delta_score": 0.975,
+    "resilience_score": 0.85,
+    "invariance_score": 0.92
+  },
+  "metrics": {
+    "kappa": 1.234e-05,
+    "delta": 0.0025,
+    "lc": 0.342
+  },
+  "expansion": {
+    "pass": true,
+    "max_error": 0.0025
+  }
+}
+```
+
+## Crystal Grades
+
+| Grade | Criteria | Interpretation |
+|-------|----------|----------------|
+| **Cristal Óptico** | δ < 0.01 | Perfect discrete structure |
+| **Cristal Industrial** | 0.01 ≤ δ < 0.1 | Robust crystalline phase |
+| **Policristalino** | 0.1 ≤ δ < 0.3 | Generalizes but impure |
+| **Vidrio Amorfo** | 0.3 ≤ δ < 0.5 | Local minimum, glass-like |
+| **Defectuoso** | δ ≥ 0.5 | No discrete structure |
+
+## Example Usage
+
+```python
+import torch
+from crystallography import StrassenCrystallographer, CrystallographyMetrics
+
+# Analyze a single checkpoint
+crystallographer = StrassenCrystallographer(
+    checkpoint_path="checkpoints/epoch_1000.pt",
+    device="cuda"
+)
+
+report = crystallographer.run_full_analysis()
+
+print(f"\nPurity Analysis:")
+print(f"  Index: {report['purity_index']:.3f}/1.000")
+print(f"  Grade: {report['grade']}")
+print(f"\nMetrics:")
+print(f"  κ (sharpness): {report['metrics']['kappa']:.2e}")
+print(f"  δ (discretization): {report['metrics']['delta']:.4f}")
+print(f"  LC (complexity): {report['metrics']['lc']:.4f}")
+
+# Reports saved to crystallography_reports/
+```
+
+## See Also
+
+- [Thermodynamics Metrics](/api/thermodynamics) - Temperature and entropy measurements
+- [Kappa Metric](/metrics/kappa) - Gradient covariance condition number
+- [Phase Transitions](/concepts/phase-transitions) - Crystal vs glass phases

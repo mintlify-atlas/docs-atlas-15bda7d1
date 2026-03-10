@@ -1,0 +1,406 @@
+---
+title: "Percolation Analysis"
+description: "API reference for bond percolation, site percolation, and structural integrity analysis"
+---
+
+## Overview
+
+The percolation module provides tools for analyzing structural connectivity, phase transitions, and robustness of neural network weight graphs through bond percolation, site percolation, and pruning experiments.
+
+## Configuration
+
+### PercolationConfiguration
+
+Configuration dataclass for all percolation analyses.
+
+```python
+from percolation_analysis import PercolationConfiguration
+
+config = PercolationConfiguration(
+    HIDDEN_DIM=8,
+    MATRIX_SIZE=2,
+    PERCOLATION_NUM_THRESHOLDS=50
+)
+```
+
+<ParamField path="HIDDEN_DIM" type="int" default="8">
+  Number of hidden slots in the bilinear model
+</ParamField>
+
+<ParamField path="MATRIX_SIZE" type="int" default="2">
+  Size of input/output matrices
+</ParamField>
+
+<ParamField path="PERCOLATION_NUM_THRESHOLDS" type="int" default="50">
+  Number of threshold points to sample in percolation curves
+</ParamField>
+
+<ParamField path="PRUNING_LEVELS" type="Tuple[float, ...]">
+  Sparsity levels for pruning experiments (default: 0.0 to 0.95)
+</ParamField>
+
+<ParamField path="DISCRETIZATION_MARGIN" type="float" default="0.1">
+  Maximum acceptable discretization error δ
+</ParamField>
+
+## Bond Percolation
+
+### BondPercolationAnalyzer
+
+Analyzes connectivity transitions in weight adjacency graphs.
+
+```python
+from percolation_analysis import (
+    BondPercolationAnalyzer,
+    WeightGraphConstructor
+)
+
+config = PercolationConfiguration()
+analyzer = BondPercolationAnalyzer(config)
+
+# Construct weight graph
+graph_constructor = WeightGraphConstructor(config)
+adjacency = graph_constructor.construct_adjacency_from_weights(weights)
+
+# Run bond percolation
+results = analyzer.analyze(adjacency)
+
+print(f"Percolation threshold: {results['percolation_threshold']:.4f}")
+print(f"Critical exponent beta: {results['critical_exponents']['beta']:.3f}")
+```
+
+#### analyze
+
+<ParamField path="adjacency" type="np.ndarray" required>
+  Symmetric adjacency matrix representing weight graph
+</ParamField>
+
+<ParamField path="thresholds" type="Optional[np.ndarray]" default="None">
+  Custom threshold values to test. If None, uses config default.
+</ParamField>
+
+**Returns:** Dictionary containing:
+- `thresholds`: List of tested threshold values
+- `largest_component_fraction`: Order parameter P_∞(p)
+- `num_clusters`: Number of disconnected components
+- `susceptibility`: Second moment of cluster distribution (diverges at p_c)
+- `percolation_threshold`: Critical threshold p_c
+- `critical_exponents`: Dictionary with 'beta' and 'gamma' exponents
+- `order_parameter_curve`: Full percolation curve data
+
+## Site Percolation
+
+### SitePercolationAnalyzer
+
+Analyzes parameter occupation and structural integrity.
+
+```python
+from percolation_analysis import SitePercolationAnalyzer
+
+analyzer = SitePercolationAnalyzer(config)
+results = analyzer.analyze(weights)
+
+pc_site = results['site_percolation_threshold']
+if pc_site:
+    print(f"Site percolation threshold: {pc_site:.4f}")
+```
+
+#### analyze
+
+<ParamField path="weights" type="Dict[str, np.ndarray]" required>
+  Dictionary with keys 'U', 'V', 'W' containing weight matrices
+</ParamField>
+
+<ParamField path="thresholds" type="Optional[np.ndarray]" default="None">
+  Custom threshold values. If None, uses config default.
+</ParamField>
+
+**Returns:** Dictionary containing:
+- `occupation_fraction`: Fraction of active parameters
+- `active_parameters`: Count of parameters above threshold
+- `layer_occupation`: Per-layer occupation fractions for U, V, W
+- `active_slots_per_threshold`: Number of active hidden slots
+- `structural_integrity`: Binary indicator (1.0 = structure preserved)
+- `site_percolation_threshold`: Critical threshold where structure fails
+
+## Pruning Percolation
+
+### PruningPercolationAnalyzer
+
+Analyzes structural robustness under magnitude-based pruning.
+
+```python
+from percolation_analysis import PruningPercolationAnalyzer
+
+analyzer = PruningPercolationAnalyzer(config)
+results = analyzer.analyze(weights)
+
+print(f"Yield strength: {results['yield_strength']}")
+print(f"Collapse sparsity: {results['collapse_sparsity']}")
+print(f"Elastic regime ends at: {results['elastic_regime_end']}")
+
+# Analyze per pruning level
+for i, sparsity in enumerate(results['pruning_levels']):
+    print(f"\nSparsity {sparsity:.2f}:")
+    print(f"  Delta: {results['discretization_delta'][i]:.4f}")
+    print(f"  Active slots: {results['active_slots'][i]}")
+    print(f"  Phase: {results['phase_per_level'][i]}")
+```
+
+#### analyze
+
+<ParamField path="weights" type="Dict[str, np.ndarray]" required>
+  Dictionary containing 'U', 'V', 'W' weight matrices
+</ParamField>
+
+**Returns:** Comprehensive dictionary with:
+- `pruning_levels`: List of sparsity values tested
+- `discretization_delta`: Discretization error δ at each level
+- `discretization_alpha`: Alpha purity α at each level
+- `active_slots`: Number of non-zero slots
+- `structural_integrity`: Binary integrity indicator
+- `kappa_proxy`: Gradient sharpness estimate
+- `hbar_proxy`: Effective Planck constant
+- `effective_temperature_proxy`: Thermal fluctuation measure
+- `local_complexity_proxy`: Active parameter fraction
+- `purity_alpha`: Alpha purity values
+- `entropy_proxy`: Parameter distribution entropy
+- `ipr_proxy`: Inverse participation ratio
+- `level_spacing_ratio`: Quantum chaos indicator
+- `fractal_dimension_proxy`: Multifractal dimension
+- `coherence_length_proxy`: Spatial coherence scale
+- `phase_per_level`: Phase classification strings
+- `yield_strength`: Maximum stable sparsity
+- `collapse_sparsity`: Sparsity where structure fails
+- `elastic_regime_end`: End of elastic deformation
+
+## Graph Construction
+
+### WeightGraphConstructor
+
+Constructs various graph representations from model weights.
+
+```python
+from percolation_analysis import WeightGraphConstructor
+
+constructor = WeightGraphConstructor(config)
+
+# Method 1: Bilinear layer connectivity
+adj1 = constructor.construct_adjacency_from_weights(weights)
+
+# Method 2: Weight correlation graph
+adj2 = constructor.construct_weight_correlation_graph(weights)
+
+# Method 3: Slot interaction graph
+adj3 = constructor.construct_slot_interaction_graph(weights)
+```
+
+#### construct_adjacency_from_weights
+
+Builds input → hidden → output connectivity graph.
+
+<ParamField path="weights" type="Dict[str, np.ndarray]" required>
+  Dictionary with 'U', 'V', 'W' weight matrices
+</ParamField>
+
+**Returns:** `np.ndarray` - Symmetric adjacency matrix of shape (n_nodes, n_nodes)
+
+#### construct_slot_interaction_graph
+
+Builds graph where nodes are hidden slots, edges are correlations.
+
+**Returns:** `np.ndarray` - Symmetric correlation matrix (HIDDEN_DIM × HIDDEN_DIM)
+
+## Cluster Analysis
+
+### ClusterSizeDistributionAnalyzer
+
+Analyzes cluster size distributions near criticality.
+
+```python
+from percolation_analysis import ClusterSizeDistributionAnalyzer
+
+analyzer = ClusterSizeDistributionAnalyzer(config)
+
+# Analyze at specific threshold (e.g., near p_c)
+cluster_data = analyzer.analyze_at_threshold(
+    adjacency=adjacency,
+    threshold=0.592  # 2D percolation p_c
+)
+
+print(f"Largest cluster: {cluster_data['largest_cluster_fraction']:.3f}")
+if cluster_data['tau_estimate']:
+    print(f"Power-law exponent τ: {cluster_data['tau_estimate']:.3f}")
+    print(f"Reference (2D percolation): {187/91:.3f}")
+print(f"Is critical: {cluster_data['is_critical']}")
+```
+
+#### analyze_at_threshold
+
+<ParamField path="adjacency" type="np.ndarray" required>
+  Graph adjacency matrix
+</ParamField>
+
+<ParamField path="threshold" type="float" required>
+  Bond threshold to apply
+</ParamField>
+
+**Returns:** Dictionary containing:
+- `num_clusters`: Total number of disconnected clusters
+- `largest_cluster`: Size of largest cluster
+- `largest_cluster_fraction`: Largest cluster / total nodes
+- `cluster_sizes`: Sorted list of all cluster sizes
+- `size_distribution`: Histogram of cluster sizes
+- `tau_estimate`: Power-law exponent (n(s) ~ s^{-τ})
+- `is_critical`: Boolean indicating proximity to criticality
+
+## Universality Classification
+
+### PercolationUniversalityAnalyzer
+
+Classifies percolation behavior into universality classes.
+
+```python
+from percolation_analysis import PercolationUniversalityAnalyzer
+
+analyzer = PercolationUniversalityAnalyzer(config)
+
+measured_exponents = {
+    'beta': bond_results['critical_exponents']['beta'],
+    'gamma': bond_results['critical_exponents']['gamma']
+}
+
+universality = analyzer.classify_universality(measured_exponents)
+
+print(f"Best match: {universality['best_match']}")
+print(f"Confidence: {universality['confidence']}")
+print(f"Distances: {universality['distances']}")
+```
+
+#### classify_universality
+
+<ParamField path="measured" type="Dict[str, Optional[float]]" required>
+  Dictionary with measured critical exponents ('beta', 'gamma', etc.)
+</ParamField>
+
+**Returns:** Dictionary containing:
+- `best_match`: String naming closest universality class ('2D_percolation', 'mean_field')
+- `distances`: Euclidean distances to each reference class
+- `measured_exponents`: Echo of input measurements
+- `reference_classes`: Theoretical exponent values
+- `confidence`: Classification confidence ('high', 'moderate', 'low', 'no_match')
+
+## Visualization
+
+### PercolationVisualizationEngine
+
+Generates publication-quality plots for all analyses.
+
+```python
+from percolation_analysis import PercolationVisualizationEngine
+
+engine = PercolationVisualizationEngine(config)
+
+# Generate all figures
+figure_paths = engine.generate_all_figures(
+    results=all_results,
+    output_dir="percolation_figures"
+)
+
+for path in figure_paths:
+    print(f"Generated: {path}")
+```
+
+#### generate_all_figures
+
+<ParamField path="results" type="Dict[str, Any]" required>
+  Dictionary containing results from bond, site, pruning, and cluster analyses
+</ParamField>
+
+<ParamField path="output_dir" type="str" required>
+  Directory where figures will be saved
+</ParamField>
+
+**Returns:** List of file paths for generated figures
+
+## Example Workflow
+
+```python
+import torch
+import numpy as np
+from percolation_analysis import (
+    PercolationConfiguration,
+    WeightGraphConstructor,
+    BondPercolationAnalyzer,
+    SitePercolationAnalyzer,
+    PruningPercolationAnalyzer,
+    PercolationVisualizationEngine
+)
+
+# Load model
+checkpoint = torch.load('checkpoint.pt', map_location='cpu')
+weights = {
+    'U': checkpoint['U.weight'].numpy(),
+    'V': checkpoint['V.weight'].numpy(),
+    'W': checkpoint['W.weight'].numpy()
+}
+
+# Initialize
+config = PercolationConfiguration()
+
+# Bond percolation
+graph_builder = WeightGraphConstructor(config)
+adjacency = graph_builder.construct_adjacency_from_weights(weights)
+
+bond_analyzer = BondPercolationAnalyzer(config)
+bond_results = bond_analyzer.analyze(adjacency)
+
+print(f"\nBond Percolation:")
+print(f"  p_c = {bond_results['percolation_threshold']:.4f}")
+print(f"  beta = {bond_results['critical_exponents']['beta']:.3f}")
+
+# Site percolation
+site_analyzer = SitePercolationAnalyzer(config)
+site_results = site_analyzer.analyze(weights)
+
+print(f"\nSite Percolation:")
+if site_results['site_percolation_threshold']:
+    print(f"  p_c = {site_results['site_percolation_threshold']:.4f}")
+
+# Pruning robustness
+pruning_analyzer = PruningPercolationAnalyzer(config)
+pruning_results = pruning_analyzer.analyze(weights)
+
+print(f"\nStructural Robustness:")
+print(f"  Yield strength: {pruning_results['yield_strength']}")
+print(f"  Collapse at: {pruning_results['collapse_sparsity']}")
+
+# Visualize
+all_results = {
+    'bond_percolation': bond_results,
+    'site_percolation': site_results,
+    'pruning_percolation': pruning_results
+}
+
+viz_engine = PercolationVisualizationEngine(config)
+figures = viz_engine.generate_all_figures(
+    results=all_results,
+    output_dir="percolation_output"
+)
+
+print(f"\nGenerated {len(figures)} figures")
+```
+
+## Critical Exponents Reference
+
+| Universality Class | β | γ | ν | p_c |
+|-------------------|-----|-----|-----|-----|
+| **2D Percolation** | 5/36 ≈ 0.139 | 43/18 ≈ 2.389 | 4/3 ≈ 1.333 | 0.5927 |
+| **Mean Field** | 1.0 | 1.0 | 0.5 | - |
+| **3D Percolation** | 0.41 | 1.8 | 0.88 | 0.3116 |
+
+## See Also
+
+- [Crystallography Analysis](/api/crystallography) - Phase characterization
+- [Basin Stability](/verification/basin-stability) - Understanding structural integrity
+- [Phase Transitions](/concepts/phase-transitions) - Percolation and phase changes

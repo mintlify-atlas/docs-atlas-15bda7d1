@@ -1,0 +1,388 @@
+---
+title: Installation
+description: Set up your environment for Strassen grokking experiments
+---
+
+## System Requirements
+
+Before installing, ensure your system meets these requirements:
+
+### Hardware
+
+<CardGroup cols={2}>
+  <Card title="Recommended" icon="server">
+    - CUDA-capable GPU (GTX 1080 or better)
+    - 8GB+ GPU memory
+    - 16GB+ system RAM
+    - 10GB free disk space
+  </Card>
+  
+  <Card title="Minimum" icon="computer">
+    - CPU-only (training will be slower)
+    - 8GB system RAM
+    - 5GB free disk space
+  </Card>
+</CardGroup>
+
+### Software
+
+- **Python**: 3.8 or later (3.10+ recommended)
+- **Operating System**: Linux, macOS, or Windows with WSL2
+- **CUDA**: 11.0 or later (if using GPU)
+
+<Warning>
+Training on CPU is significantly slower. A single training run that takes 20 minutes on GPU may take 2-3 hours on CPU.
+</Warning>
+
+## Quick Installation
+
+The fastest way to get started is using the provided installation script:
+
+<Steps>
+  <Step title="Clone the Repository">
+    ```bash
+    git clone https://github.com/grisuno/strass_strassen.git
+    cd strass_strassen
+    ```
+  </Step>
+  
+  <Step title="Run the Install Script">
+    ```bash
+    chmod +x install.sh
+    ./install.sh
+    ```
+    
+    This script will:
+    1. Create a Python virtual environment in `./env`
+    2. Activate the environment
+    3. Install all dependencies from `requirements.txt`
+  </Step>
+  
+  <Step title="Activate the Environment">
+    For subsequent sessions, activate the environment:
+    
+    ```bash
+    source env/bin/activate
+    ```
+    
+    On Windows with WSL:
+    ```bash
+    source env/bin/activate
+    ```
+  </Step>
+</Steps>
+
+## Manual Installation
+
+If you prefer to install manually or need more control:
+
+### 1. Create a Virtual Environment
+
+<CodeGroup>
+```bash Linux/macOS
+python3 -m venv env
+source env/bin/activate
+```
+
+```bash Windows (PowerShell)
+python -m venv env
+.\env\Scripts\Activate.ps1
+```
+
+```bash Windows (CMD)
+python -m venv env
+.\env\Scripts\activate.bat
+```
+</CodeGroup>
+
+### 2. Install Core Dependencies
+
+The project requires the following packages:
+
+```bash
+pip install --upgrade pip
+pip install torch>=1.9.0
+pip install numpy>=1.19.0
+```
+
+<Note>
+PyTorch installation may vary depending on your CUDA version. Visit [pytorch.org](https://pytorch.org/get-started/locally/) to get the correct installation command for your system.
+</Note>
+
+### 3. Install Additional Dependencies
+
+For ONNX export and other features:
+
+```bash
+pip install onnx onnxruntime onnxscript tomli
+```
+
+### 4. Verify Installation
+
+Test that PyTorch is correctly installed and can detect your GPU:
+
+```python
+import torch
+import numpy as np
+
+print(f"PyTorch version: {torch.__version__}")
+print(f"NumPy version: {np.__version__}")
+print(f"CUDA available: {torch.cuda.is_available()}")
+if torch.cuda.is_available():
+    print(f"CUDA version: {torch.version.cuda}")
+    print(f"GPU device: {torch.cuda.get_device_name(0)}")
+```
+
+Expected output:
+```
+PyTorch version: 2.x.x
+NumPy version: 1.24.x
+CUDA available: True
+CUDA version: 12.1
+GPU device: NVIDIA GeForce RTX 3090
+```
+
+## Dependencies Explained
+
+Here's what each dependency does:
+
+<CodeGroup>
+```txt requirements.txt
+torch>=1.9.0
+numpy>=1.19.0
+onnx
+onnxruntime
+onnxscript
+tomli
+```
+</CodeGroup>
+
+| Package | Purpose | Required? |
+|---------|---------|----------|
+| `torch>=1.9.0` | Core deep learning framework | ✓ Yes |
+| `numpy>=1.19.0` | Numerical computations | ✓ Yes |
+| `onnx` | Model export format | Optional |
+| `onnxruntime` | ONNX model inference | Optional |
+| `onnxscript` | ONNX scripting support | Optional |
+| `tomli` | TOML configuration parsing | Optional |
+
+<Note>
+ONNX packages are only needed if you want to export trained models to ONNX format for deployment.
+</Note>
+
+## Project Structure
+
+After installation, you'll have this directory structure:
+
+```
+strass_strassen/
+├── env/                          # Virtual environment
+├── src/
+│   ├── training/
+│   │   ├── strassen_core.py     # Core Strassen implementation
+│   │   ├── train_strassen.py    # Main training script
+│   │   ├── strassen_grokkit.py  # Grokking utilities
+│   │   └── weights.pt           # Pre-trained weights
+│   ├── benchmarks/
+│   │   ├── benchmark_strassen.py
+│   │   └── strassen_numpy.py
+│   └── discovery/
+│       └── auto_T_discovery.py
+├── experiments/
+│   ├── validation_experiments.py
+│   ├── generate_figures.py
+│   └── statistics/
+├── requirements.txt
+├── install.sh
+└── README.md
+```
+
+## Troubleshooting
+
+### CUDA Not Available
+
+If `torch.cuda.is_available()` returns `False`:
+
+1. **Check NVIDIA driver**:
+   ```bash
+   nvidia-smi
+   ```
+   
+2. **Reinstall PyTorch with CUDA**:
+   ```bash
+   pip uninstall torch
+   pip install torch --index-url https://download.pytorch.org/whl/cu121
+   ```
+   
+   Replace `cu121` with your CUDA version (e.g., `cu118` for CUDA 11.8).
+
+3. **Verify CUDA toolkit**:
+   ```bash
+   nvcc --version
+   ```
+
+### Import Errors
+
+If you get `ModuleNotFoundError`:
+
+```bash
+# Ensure you're in the virtual environment
+which python  # Should point to env/bin/python
+
+# Reinstall dependencies
+pip install -r requirements.txt
+```
+
+### Memory Issues
+
+If you encounter out-of-memory errors during training:
+
+1. **Reduce batch size**: Change `batch_size=32` to `batch_size=16` or `batch_size=8`
+2. **Use CPU**: Set `DEVICE = torch.device("cpu")` in training scripts
+3. **Enable gradient checkpointing** (for larger models)
+
+<Warning>
+Reducing batch size below 24 may affect the crystallization success rate. The optimal range is [24, 128].
+</Warning>
+
+### Permission Errors
+
+If `install.sh` fails with permission errors:
+
+```bash
+chmod +x install.sh
+./install.sh
+```
+
+If still failing:
+```bash
+bash install.sh
+```
+
+## Development Installation
+
+For contributors or those modifying the code:
+
+```bash
+# Clone with development branch
+git clone -b develop https://github.com/grisuno/strass_strassen.git
+cd strass_strassen
+
+# Install in editable mode
+pip install -e .
+
+# Install development dependencies
+pip install pytest black flake8 mypy
+```
+
+## Docker Installation (Optional)
+
+For a containerized environment:
+
+```dockerfile
+FROM pytorch/pytorch:2.0.0-cuda11.7-cudnn8-runtime
+
+WORKDIR /workspace
+
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+
+COPY . .
+
+CMD ["python", "src/training/train_strassen.py"]
+```
+
+Build and run:
+```bash
+docker build -t strassen-grokking .
+docker run --gpus all -v $(pwd)/outputs:/workspace/outputs strassen-grokking
+```
+
+## Verifying the Installation
+
+Run a quick smoke test to ensure everything works:
+
+```python
+# test_installation.py
+import torch
+from pathlib import Path
+
+def test_installation():
+    print("Testing installation...\n")
+    
+    # Test 1: PyTorch
+    assert torch.__version__ >= "1.9.0", "PyTorch version too old"
+    print(f"✓ PyTorch {torch.__version__} installed")
+    
+    # Test 2: CUDA (if available)
+    if torch.cuda.is_available():
+        print(f"✓ CUDA {torch.version.cuda} available")
+        print(f"  GPU: {torch.cuda.get_device_name(0)}")
+    else:
+        print("⚠ CUDA not available, will use CPU")
+    
+    # Test 3: Import core module
+    try:
+        from src.training.strassen_core import strassen
+        print("✓ strassen_core module imports successfully")
+    except ImportError as e:
+        print(f"✗ Failed to import strassen_core: {e}")
+        return False
+    
+    # Test 4: Quick multiplication test
+    X = torch.randn(2, 2)
+    Y = torch.randn(2, 2)
+    try:
+        C = strassen(X, Y)
+        C_true = torch.matmul(X, Y)
+        error = (C - C_true).abs().max().item()
+        assert error < 1e-4, f"Strassen result incorrect: error={error}"
+        print(f"✓ Strassen multiplication works (error: {error:.2e})")
+    except Exception as e:
+        print(f"✗ Strassen test failed: {e}")
+        return False
+    
+    print("\n✓ All tests passed! Installation successful.")
+    return True
+
+if __name__ == "__main__":
+    test_installation()
+```
+
+Run the test:
+```bash
+python test_installation.py
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart Guide" icon="rocket" href="/quickstart">
+    Train your first Strassen model in minutes
+  </Card>
+  
+  <Card title="Understanding the Code" icon="code" href="/concepts/architecture">
+    Learn about the bilinear operator and tensor decomposition
+  </Card>
+  
+  <Card title="Run Experiments" icon="flask" href="/experiments/batch-size-sweep">
+    Explore the hyperparameter space and phase diagram
+  </Card>
+  
+  <Card title="API Reference" icon="book" href="/api/strassen-core">
+    Detailed documentation of all functions and classes
+  </Card>
+</CardGroup>
+
+## Getting Help
+
+If you encounter issues not covered here:
+
+- Check the [GitHub Issues](https://github.com/grisuno/strass_strassen/issues)
+- Read the [full research paper](https://doi.org/10.5281/zenodo.18454852)
+- Review the README.md in the repository
+- Examine the experiment scripts in `experiments/` for working examples
+
+<Note>
+The codebase includes 245+ training runs with full logs available on [Zenodo](https://doi.org/10.5281/zenodo.18072858). These can serve as reference for expected behavior.
+</Note>

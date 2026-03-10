@@ -1,97 +1,135 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "Strassen Neural Network Crystallization"
+description: "Engineering algorithmic structure in neural networks through materials science and thermodynamics principles"
 ---
 
-## Setting up
+<div style={{textAlign: 'center', padding: '3rem 0'}}>
+  <h1 style={{fontSize: '3rem', fontWeight: 'bold', marginBottom: '1rem', color: '#f6be31'}}>
+    Strassen Neural Network Crystallization
+  </h1>
+  <p style={{fontSize: '1.25rem', color: '#4A4A4A', maxWidth: '800px', margin: '0 auto'}}>
+    Inducing discrete algorithmic structure in neural networks through thermodynamic engineering and materials science principles
+  </p>
+</div>
 
-Get your documentation site up and running in minutes.
+## Overview
 
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
+This research demonstrates a reproducible two-phase protocol for inducing the Strassen matrix multiplication algorithm in neural networks with a 68% success rate. The work bridges materials science, statistical thermodynamics, and deep learning to understand how discrete algorithmic structures emerge during training.
 
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Two-Phase Protocol" icon="flask" href="/concepts/two-phase-protocol">
+    Train with controlled conditions, then prune and discretize to crystallize algorithms
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Thermodynamic Analysis" icon="temperature-high" href="/concepts/thermodynamics">
+    Apply statistical thermodynamics to gradient noise and phase transitions
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Perfect Prediction" icon="chart-line" href="/metrics/kappa">
+    κ metric achieves AUC 1.000 for predicting algorithmic crystallization
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="Zero-Shot Expansion" icon="expand" href="/verification/zero-shot-expansion">
+    Learned 2x2 structure transfers to 64x64 matrices without retraining
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## Key Features
 
-Everything you need to create world-class documentation.
+<CardGroup cols={3}>
+  <Card title="68% Success Rate" icon="check-circle">
+    Reproducible protocol for inducing Strassen structure under controlled conditions
+  </Card>
+  <Card title="Phase Transitions" icon="wave-square">
+    Measurable first-order phase transition from glass to crystalline states
+  </Card>
+  <Card title="Basin Stability" icon="shield">
+    Discrete solutions remain stable under pruning up to 50% sparsity
+  </Card>
+  <Card title="Gradient Covariance" icon="chart-network">
+    κ condition number perfectly separates crystallized from non-crystallized runs
+  </Card>
+  <Card title="Entropy Metrics" icon="gauge">
+    Delta δ serves as early prospector for successful seeds
+  </Card>
+  <Card title="Statistical Validation" icon="chart-bar">
+    245 training runs with ANOVA confirming batch size effects (F=15.34, p less than 0.0001)
+  </Card>
+</CardGroup>
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+## Quick Start
 
-## Need inspiration?
+<Steps>
+  <Step title="Installation">
+    Install the package and dependencies
+    
+    ```bash
+    git clone https://github.com/grisuno/strass_strassen.git
+    cd strass_strassen
+    pip install -r requirements.txt
+    ```
+  </Step>
+  
+  <Step title="Run Training">
+    Train a model with optimal conditions
+    
+    ```python
+    from src.training.train_strassen import train_strassen
+    
+    # Train with optimal batch size range
+    model = train_strassen(
+        batch_size=32,
+        weight_decay=1e-4,
+        epochs=2000
+    )
+    ```
+  </Step>
+  
+  <Step title="Verify Crystallization">
+    Check if the algorithm crystallized
+    
+    ```python
+    from src.training.strassen_core import strassen, get_coefficients
+    
+    # Test zero-shot expansion
+    A = torch.randn(64, 64)
+    B = torch.randn(64, 64)
+    C = strassen(A, B)
+    ```
+  </Step>
+</Steps>
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+## Research Contributions
+
+This work makes several key contributions to understanding algorithmic learning in neural networks:
+
+1. **Engineering Protocol**: Reproducible recipe for inducing algorithmic structure with documented success rates
+2. **Predictive Metrics**: κ achieves perfect classification (AUC 1.000) between crystallized and non-crystallized states
+3. **Basin Characterization**: Discrete solutions remain stable under 50% pruning, establishing structural integrity
+4. **Verification Framework**: Explicit criteria distinguishing genuine algorithmic learning from local minima
+5. **Thermodynamic Foundation**: Measurable temperature, entropy, and heat capacity during training
+6. **Statistical Validation**: 245 runs confirming batch size significantly affects crystallization
+
+<CardGroup cols={2}>
+  <Card title="Read the Paper" icon="file-lines" href="https://github.com/grisuno/strass_strassen">
+    Complete research documentation with detailed appendices
+  </Card>
+  <Card title="View Results" icon="chart-mixed" href="/research/experimental-results">
+    Experimental data from 245 training runs
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/strassen-core">
+    Core functions for Strassen multiplication
+  </Card>
+  <Card title="Training Guide" icon="graduation-cap" href="/training/training-conditions">
+    Optimal conditions for algorithmic induction
+  </Card>
+</CardGroup>
+
+## Citations
+
+```bibtex
+@software{strassen_crystallization_2026,
+  author = {Grisuno},
+  title = {Engineering Algorithmic Structure in Neural Networks},
+  year = {2026},
+  doi = {10.5281/zenodo.18454852},
+  url = {https://github.com/grisuno/strass_strassen}
+}
+```

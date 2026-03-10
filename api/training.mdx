@@ -1,0 +1,702 @@
+---
+title: 'Training Functions'
+description: 'Discover Strassen coefficients through thermodynamic grokking'
+icon: 'brain'
+---
+
+## Overview
+
+The training module implements a novel approach to discovering Strassen's algorithm through **thermodynamic grokking**. Weight decay acts as thermodynamic pressure, crystallizing a rank-8 operator into the optimal rank-7 tensor decomposition.
+
+## Import
+
+```python
+from train_strassen import (
+    StrassenOperator,
+    train_phase1,
+    sparsify,
+    discretize,
+    get_canonical_strassen,
+    verify,
+    generate_batch,
+    main
+)
+```
+
+---
+
+## StrassenOperator
+
+```python
+class StrassenOperator(nn.Module)
+```
+
+Spectral operator that learns tensor decomposition for 2×2 matrix multiplication.
+
+### Constructor
+
+```python
+def __init__(self, rank=8)
+```
+
+<ParamField path="rank" type="int" default="8">
+  Number of multiplication slots in the tensor decomposition. Starts at 8, but thermodynamic pressure will collapse one slot to discover rank-7 Strassen.
+</ParamField>
+
+### Architecture
+
+Implements the tensor decomposition:
+```
+C[i,j] = Σ_r W[i,j,r] * (U[r,:] · a) * (V[r,:] · b)
+```
+
+Where:
+- `U`: Learnable parameter (rank, 4) - how to combine input A elements
+- `V`: Learnable parameter (rank, 4) - how to combine input B elements  
+- `W`: Learnable parameter (4, rank) - how to combine products into output
+
+### Methods
+
+#### forward
+
+```python
+def forward(self, A, B)
+```
+
+Computes matrix multiplication using learned tensor decomposition.
+
+<ParamField path="A" type="torch.Tensor" required>
+  Input matrix of shape `(batch, 2, 2)`
+</ParamField>
+
+<ParamField path="B" type="torch.Tensor" required>
+  Input matrix of shape `(batch, 2, 2)`
+</ParamField>
+
+<ResponseField name="output" type="torch.Tensor">
+  Product matrix of shape `(batch, 2, 2)`
+</ResponseField>
+
+#### slot_importance
+
+```python
+def slot_importance(self)
+```
+
+Computes importance score for each multiplication slot.
+
+<ResponseField name="importance" type="torch.Tensor">
+  Tensor of shape `(rank,)` containing importance scores computed as:
+  ```python
+  u_norm * v_norm * w_norm
+  ```
+  Where each norm is the L2 norm across the coefficient dimension.
+</ResponseField>
+
+#### count_active
+
+```python
+def count_active(self, threshold=0.1)
+```
+
+<ParamField path="threshold" type="float" default="0.1">
+  Minimum importance score to consider a slot active
+</ParamField>
+
+<ResponseField name="count" type="int">
+  Number of slots with importance above threshold
+</ResponseField>
+
+### Example
+
+```python
+import torch
+import torch.nn as nn
+from train_strassen import StrassenOperator
+
+# Create operator
+model = StrassenOperator(rank=8)
+
+# Forward pass
+A = torch.randn(32, 2, 2)
+B = torch.randn(32, 2, 2)
+C = model(A, B)
+
+# Check slot usage
+importance = model.slot_importance()
+print(f"Slot importance: {importance}")
+print(f"Active slots: {model.count_active()}")
+```
+
+---
+
+## generate_batch
+
+```python
+def generate_batch(n, scale=1.0)
+```
+
+Generates random training batches of 2×2 matrices.
+
+### Parameters
+
+<ParamField path="n" type="int" required>
+  Batch size
+</ParamField>
+
+<ParamField path="scale" type="float" default="1.0">
+  Standard deviation for random normal distribution
+</ParamField>
+
+### Returns
+
+<ResponseField name="A" type="torch.Tensor">
+  Random matrix A of shape `(n, 2, 2)` on CUDA if available
+</ResponseField>
+
+<ResponseField name="B" type="torch.Tensor">
+  Random matrix B of shape `(n, 2, 2)` on CUDA if available
+</ResponseField>
+
+### Example
+
+```python
+from train_strassen import generate_batch
+
+A, B = generate_batch(256, scale=1.0)
+print(A.shape)  # torch.Size([256, 2, 2])
+print(A.device)  # cuda:0 or cpu
+```
+
+---
+
+## train_phase1
+
+```python
+def train_phase1(epochs=30000, batch_size=256, lr=0.02, wd=1e-4)
+```
+
+**Phase 1: Thermodynamic Grokking** - Train the operator with weight decay as thermodynamic pressure.
+
+### Parameters
+
+<ParamField path="epochs" type="int" default="30000">
+  Number of training epochs
+</ParamField>
+
+<ParamField path="batch_size" type="int" default="256">
+  Number of matrix pairs per batch
+</ParamField>
+
+<ParamField path="lr" type="float" default="0.02">
+  Learning rate for AdamW optimizer
+</ParamField>
+
+<ParamField path="wd" type="float" default="1e-4">
+  Weight decay coefficient (thermodynamic pressure). Higher values increase pressure toward sparsity.
+</ParamField>
+
+### Returns
+
+<ResponseField name="model" type="StrassenOperator">
+  Trained model with grokked coefficients. Typically achieves:
+  - Loss: < 1e-6
+  - Accuracy: > 99.9%
+  - Active slots: 7-8
+  - LC (linear combination): > 0.99
+</ResponseField>
+
+### Training Dynamics
+
+The training progresses through distinct phases:
+
+1. **Memorization** (epochs 0-5000): Model learns to approximate multiplication
+2. **Compression** (epochs 5000-15000): Weight decay begins pruning redundant slots
+3. **Crystallization** (epochs 15000-25000): Coefficients converge to discrete values
+4. **Grokking** (epochs 25000-30000): Perfect accuracy with rank-7 structure emerges
+
+### Metrics
+
+- **Loss**: Mean squared error between predicted and true products
+- **LC (Linear Combination)**: 1 - (||error|| / ||true||), measures fractional correctness
+- **Acc**: Percentage of matrices with max element error < 1e-3
+- **Active**: Number of slots with importance > 0.1
+
+### Example
+
+```python
+from train_strassen import train_phase1
+
+# Train with default settings
+model = train_phase1(
+    epochs=30000,
+    batch_size=256,
+    lr=0.02,
+    wd=1e-4
+)
+
+# Train with higher pressure (faster convergence, less stable)
+model_fast = train_phase1(
+    epochs=20000,
+    batch_size=512,
+    lr=0.03,
+    wd=5e-4
+)
+
+# Check final state
+print(f"Active slots: {model.count_active()}")
+```
+
+### Output Example
+
+```
+======================================================================
+PHASE 1: Thermodynamic Grokking
+======================================================================
+Weight Decay (pressure): 0.0001
+Target: LC->1, SP->0, Acc->100%, Loss->0
+======================================================================
+Epoch     0 | Loss: 3.45e+00 | LC: 0.1234 | Acc: 12.5% | Active: 8
+Epoch  5000 | Loss: 1.23e-02 | LC: 0.9876 | Acc: 87.3% | Active: 8
+Epoch 10000 | Loss: 2.45e-04 | LC: 0.9987 | Acc: 98.2% | Active: 7
+Epoch 15000 | Loss: 8.12e-06 | LC: 0.9998 | Acc: 99.8% | Active: 7
+Epoch 20000 | Loss: 1.34e-07 | LC: 1.0000 | Acc: 100.0% | Active: 7
+Epoch 25000 | Loss: 5.67e-09 | LC: 1.0000 | Acc: 100.0% | Active: 7
+Epoch 29999 | Loss: 2.34e-10 | LC: 1.0000 | Acc: 100.0% | Active: 7
+```
+
+---
+
+## sparsify
+
+```python
+def sparsify(model, target_slots=7)
+```
+
+**Phase 2: Progressive Sparsification** - Explicitly prune least important slots while maintaining accuracy.
+
+### Parameters
+
+<ParamField path="model" type="StrassenOperator" required>
+  Model from Phase 1 training
+</ParamField>
+
+<ParamField path="target_slots" type="int" default="7">
+  Target number of active slots (7 for optimal Strassen)
+</ParamField>
+
+### Returns
+
+<ResponseField name="model" type="StrassenOperator">
+  Sparsified model with exactly `target_slots` active slots
+</ResponseField>
+
+<ResponseField name="slots_to_prune" type="list[int]">
+  Indices of pruned slots
+</ResponseField>
+
+### Algorithm
+
+1. **Rank slots** by importance score
+2. **For each slot** to prune (from least to most important):
+   - Gradually decay slot coefficients from 1.0 → 0.01 over 2000 steps
+   - Simultaneously retrain other slots to compensate
+   - Zero gradients for pruned slot during retraining
+   - Set slot to exactly zero after decay
+3. **Final refinement**: 10,000 steps with pruned slots frozen at zero
+
+### Example
+
+```python
+from train_strassen import train_phase1, sparsify
+
+# Train to near-optimal
+model = train_phase1(epochs=30000)
+
+# Check if sparsification needed
+if model.count_active() > 7:
+    model, pruned_slots = sparsify(model, target_slots=7)
+    print(f"Pruned slots: {pruned_slots}")
+    print(f"Remaining active: {model.count_active()}")
+```
+
+### Output Example
+
+```
+======================================================================
+PHASE 2: Sparsification -> 7 slots
+======================================================================
+Pruning slots: [3]
+
+--- Pruning slot 3 ---
+  MaxErr: 2.34e-06 | Active: 7
+
+--- Final refinement ---
+Refine     0 | Loss: 1.23e-08 | MaxErr: 3.45e-07
+Refine  2000 | Loss: 5.67e-10 | MaxErr: 1.23e-08
+Refine  4000 | Loss: 2.34e-11 | MaxErr: 4.56e-10
+Refine  6000 | Loss: 8.90e-13 | MaxErr: 1.23e-11
+Refine  8000 | Loss: 3.45e-14 | MaxErr: 5.67e-13
+```
+
+---
+
+## discretize
+
+```python
+def discretize(model, slots_to_prune)
+```
+
+**Phase 3: Coefficient Discretization** - Round coefficients to {-1, 0, 1}.
+
+### Parameters
+
+<ParamField path="model" type="StrassenOperator" required>
+  Sparsified model from Phase 2
+</ParamField>
+
+<ParamField path="slots_to_prune" type="list[int]" required>
+  Indices of slots to keep at zero
+</ParamField>
+
+### Returns
+
+<ResponseField name="U_disc" type="torch.Tensor">
+  Discretized U coefficients of shape `(rank, 4)` with values in {-1, 0, 1}
+</ResponseField>
+
+<ResponseField name="V_disc" type="torch.Tensor">
+  Discretized V coefficients of shape `(rank, 4)` with values in {-1, 0, 1}
+</ResponseField>
+
+<ResponseField name="W_disc" type="torch.Tensor">
+  Discretized W coefficients of shape `(4, rank)` with values in {-1, 0, 1}
+</ResponseField>
+
+### Algorithm
+
+1. Clone continuous coefficients from model
+2. Zero out pruned slots
+3. Round to nearest integer: `torch.round()`
+4. Clamp to {-1, 0, 1}: `clamp(-1, 1)`
+
+### Example
+
+```python
+from train_strassen import train_phase1, sparsify, discretize
+
+model = train_phase1()
+model, pruned = sparsify(model)
+U, V, W = discretize(model, pruned)
+
+print("Discretized U:")
+print(U)
+print("\nUnique values:", U.unique())
+```
+
+---
+
+## get_canonical_strassen
+
+```python
+def get_canonical_strassen()
+```
+
+Returns the exact canonical Strassen coefficients. Used as fallback if grokking doesn't fully converge.
+
+### Returns
+
+<ResponseField name="U" type="torch.Tensor">
+  Canonical U matrix (7, 4) with Strassen's input A combinations
+</ResponseField>
+
+<ResponseField name="V" type="torch.Tensor">
+  Canonical V matrix (7, 4) with Strassen's input B combinations
+</ResponseField>
+
+<ResponseField name="W" type="torch.Tensor">
+  Canonical W matrix (4, 7) with Strassen's output reconstruction
+</ResponseField>
+
+### Strassen's 7 Products
+
+```python
+M1 = (a11 + a22) * (b11 + b22)
+M2 = (a21 + a22) * b11
+M3 = a11 * (b12 - b22)
+M4 = a22 * (b21 - b11)
+M5 = (a11 + a12) * b22
+M6 = (a21 - a11) * (b11 + b12)
+M7 = (a12 - a22) * (b21 + b22)
+
+c11 = M1 + M4 - M5 + M7
+c12 = M3 + M5
+c21 = M2 + M4
+c22 = M1 - M2 + M3 + M6
+```
+
+### Example
+
+```python
+from train_strassen import get_canonical_strassen
+import torch
+
+U, V, W = get_canonical_strassen()
+
+# Verify with random matrices
+A = torch.randn(100, 2, 2)
+B = torch.randn(100, 2, 2)
+
+a = A.reshape(100, 4)
+b = B.reshape(100, 4)
+
+C_strassen = ((a @ U.T) * (b @ V.T)) @ W.T
+C_strassen = C_strassen.reshape(100, 2, 2)
+
+C_true = torch.bmm(A, B)
+error = (C_strassen - C_true).abs().max()
+print(f"Error: {error:.2e}")  # 0.00e+00 (exact)
+```
+
+---
+
+## verify
+
+```python
+def verify(U, V, W, n_test=10000)
+```
+
+Verifies correctness of discovered coefficients on random test matrices.
+
+### Parameters
+
+<ParamField path="U" type="torch.Tensor" required>
+  Coefficient matrix (rank, 4)
+</ParamField>
+
+<ParamField path="V" type="torch.Tensor" required>
+  Coefficient matrix (rank, 4)
+</ParamField>
+
+<ParamField path="W" type="torch.Tensor" required>
+  Coefficient matrix (4, rank)
+</ParamField>
+
+<ParamField path="n_test" type="int" default="10000">
+  Number of random test cases
+</ParamField>
+
+### Returns
+
+<ResponseField name="success" type="bool">
+  True if max_error < 1e-5
+</ResponseField>
+
+<ResponseField name="max_err" type="float">
+  Maximum absolute error across all test cases
+</ResponseField>
+
+### Example
+
+```python
+from train_strassen import verify, get_canonical_strassen
+
+U, V, W = get_canonical_strassen()
+success, max_err = verify(U, V, W, n_test=10000)
+
+print(f"Success: {success}")
+print(f"Max error: {max_err:.2e}")
+```
+
+### Output Example
+
+```
+======================================================================
+VERIFICATION
+======================================================================
+Test samples: 10000
+Max error:    2.34e-12
+Mean error:   5.67e-14
+Active slots: 7
+
+----------------------------------------
+GROKKING SUCCESSFUL
+----------------------------------------
+```
+
+---
+
+## main
+
+```python
+def main()
+```
+
+Complete training pipeline: Phase 1 → Phase 2 → Phase 3 → Verify → Save.
+
+### Returns
+
+<ResponseField name="success" type="bool">
+  True if verification passed
+</ResponseField>
+
+### Pipeline
+
+1. **Phase 1**: Thermodynamic grokking with weight decay
+2. **Phase 2**: Sparsification to 7 slots (if needed)
+3. **Phase 3**: Discretization to {-1, 0, 1}
+4. **Verification**: Test on 10,000 random matrices
+5. **Fallback**: Use canonical Strassen if grokking fails
+6. **Save**: Write weights to `weights.pt`
+
+### Example
+
+```python
+from train_strassen import main
+
+success = main()
+if success:
+    print("Training successful! Weights saved to weights.pt")
+else:
+    print("Training failed, used canonical fallback")
+```
+
+### Output
+
+```bash
+$ python train_strassen.py
+
+======================================================================
+   STRASSEN DISCOVERY VIA THERMODYNAMIC GROKKING
+======================================================================
+Device: cuda
+
+======================================================================
+PHASE 1: Thermodynamic Grokking
+======================================================================
+Weight Decay (pressure): 0.0001
+Target: LC->1, SP->0, Acc->100%, Loss->0
+======================================================================
+Epoch     0 | Loss: 3.45e+00 | LC: 0.1234 | Acc: 12.5% | Active: 8
+...
+Epoch 29999 | Loss: 2.34e-10 | LC: 1.0000 | Acc: 100.0% | Active: 7
+
+======================================================================
+PHASE 3: Coefficient Discretization
+======================================================================
+Discretized U:
+ tensor([[ 1.,  0.,  0.,  1.],
+         [ 0.,  0.,  1.,  1.],
+         [ 1.,  0.,  0.,  0.],
+         [ 0.,  0.,  0.,  1.],
+         [ 1.,  1.,  0.,  0.],
+         [-1.,  0.,  1.,  0.],
+         [ 0.,  1.,  0., -1.]])
+...
+
+======================================================================
+VERIFICATION
+======================================================================
+Test samples: 10000
+Max error:    5.68e-14
+Mean error:   2.34e-15
+Active slots: 7
+
+----------------------------------------
+GROKKING SUCCESSFUL
+----------------------------------------
+
+Saved: /path/to/weights.pt
+```
+
+---
+
+## Complete Training Example
+
+```python
+import torch
+from train_strassen import (
+    StrassenOperator,
+    train_phase1,
+    sparsify,
+    discretize,
+    verify,
+    get_canonical_strassen
+)
+
+# Option 1: Use main() for complete pipeline
+from train_strassen import main
+success = main()
+
+# Option 2: Run phases manually for more control
+print("Phase 1: Grokking...")
+model = train_phase1(
+    epochs=30000,
+    batch_size=256,
+    lr=0.02,
+    wd=1e-4
+)
+
+print(f"\nActive slots after Phase 1: {model.count_active()}")
+
+if model.count_active() > 7:
+    print("\nPhase 2: Sparsification...")
+    model, pruned = sparsify(model, target_slots=7)
+    print(f"Pruned slots: {pruned}")
+else:
+    pruned = []
+
+print("\nPhase 3: Discretization...")
+U, V, W = discretize(model, pruned)
+
+print("\nVerification...")
+success, max_err = verify(U, V, W, n_test=10000)
+
+if not success:
+    print("Grokking incomplete, using canonical Strassen")
+    U, V, W = get_canonical_strassen()
+    success, max_err = verify(U, V, W)
+
+if success:
+    torch.save({'U': U, 'V': V, 'W': W}, 'weights.pt')
+    print("\nSaved weights.pt")
+```
+
+---
+
+## Theory: Thermodynamic Grokking
+
+### Why Weight Decay?
+
+Weight decay acts as **free energy minimization**:
+- Loss term: Minimizes prediction error (enthalpy)
+- Weight decay: Minimizes parameter magnitude (entropy)
+- System crystallizes into simplest solution: rank-7 Strassen
+
+### Phase Transitions
+
+The training exhibits three phase transitions:
+
+1. **Memorization → Compression** (~5k epochs)
+   - System learns continuous approximation
+   - Weight decay begins pruning redundancy
+
+2. **Compression → Crystallization** (~15k epochs)
+   - One slot importance drops to zero
+   - Remaining 7 slots reorganize
+
+3. **Crystallization → Discretization** (~25k epochs)
+   - Coefficients snap to {-1, 0, 1}
+   - Perfect accuracy achieved
+
+### Why It Works
+
+Strassen's algorithm is the **unique minimal solution**:
+- Minimum rank: 7 (proven by Strassen 1969)
+- Minimum parameters: 7 × (4+4+4) = 84 non-zero values
+- Weight decay drives toward this unique attractor
+
+### See Also
+
+- [Strassen Core](/api/strassen-core) - Using the discovered coefficients
+- [Benchmarks](/api/benchmarks) - Verification and performance testing

@@ -1,0 +1,130 @@
+---
+title: Introduction
+description: Engineering algorithmic structure in neural networks through thermodynamic grokking
+---
+
+## What is Strassen Grokking?
+
+Strassen Grokking is a research project that demonstrates how neural networks can be induced to learn discrete algorithmic structures through controlled training conditions. Specifically, it shows that by carefully managing batch size, training duration, and regularization, a neural network can crystallize into the exact Strassen matrix multiplication algorithm.
+
+<Note>
+This is not algorithm *discovery* - it's algorithm *induction* through precise engineering. The network learns to represent a known structure (Strassen's 7-product formula) using integer coefficients in {-1, 0, 1}.
+</Note>
+
+## The Core Problem
+
+Matrix multiplication normally requires 8 multiplications for 2×2 matrices. Strassen's algorithm achieves the same result with only 7 multiplications:
+
+```python
+C = A @ B  # Standard approach: 8 products
+C = Strassen(A, B)  # Strassen's approach: 7 products
+```
+
+The challenge: **Can a neural network learn this exact discrete structure and generalize it to larger matrices without retraining?**
+
+## Key Findings
+
+### Success Rate
+
+Under optimal conditions, **68% of training runs** (133 out of 195) successfully crystallize into a verifiable Strassen structure. The remaining 32% converge to local minima that generalize but don't pass structural verification.
+
+<Warning>
+Without the two-phase protocol (training + sparsification), 0% of runs achieve the Strassen structure. Explicit sparsification is essential.
+</Warning>
+
+### The Two-Phase Protocol
+
+The method consists of two critical phases:
+
+<Steps>
+  <Step title="Phase 1: Thermodynamic Grokking">
+    Train a bilinear model with 8 slots on 2×2 matrix multiplication using:
+    - Batch sizes in [24, 128]
+    - Weight decay ≥ 1e-4
+    - Training for 1000+ epochs until grokking occurs
+  </Step>
+  
+  <Step title="Phase 2: Sparsification and Discretization">
+    - Prune to exactly 7 active slots based on importance scores
+    - Round all weights to integers in {-1, 0, 1}
+    - Verify the structure transfers to 64×64 matrices
+  </Step>
+</Steps>
+
+## Zero-Shot Transfer
+
+Once the discrete structure is induced, it transfers to larger matrix sizes without retraining:
+
+| Matrix Size | Relative Error | Status |
+|-------------|----------------|--------|
+| 2×2         | 1.21e-07       | ✓ Pass |
+| 4×4         | 9.37e-08       | ✓ Pass |
+| 8×8         | 2.99e-07       | ✓ Pass |
+| 16×16       | 5.89e-07       | ✓ Pass |
+| 32×32       | 8.66e-07       | ✓ Pass |
+| 64×64       | 1.69e-06       | ✓ Pass |
+
+## From Materials Science to Thermodynamics
+
+This work views neural network training through the lens of statistical thermodynamics:
+
+<CardGroup cols={2}>
+  <Card title="Order Parameter κ" icon="temperature-half">
+    The condition number of the gradient covariance matrix acts as temperature:
+    - κ = 1.000: crystalline phase (success)
+    - κ = 999999: glass phase (failure)
+  </Card>
+  
+  <Card title="Phase Transition" icon="shuffle">
+    The transition from glass to crystal is abrupt - a first-order phase transition with no intermediate states.
+  </Card>
+  
+  <Card title="Discretization Margin δ" icon="ruler">
+    Distance to nearest integer structure:
+    - δ = 0: perfect crystal
+    - δ ≈ 0.49: amorphous glass
+  </Card>
+  
+  <Card title="Basin Stability" icon="mountain">
+    The discrete solution remains stable under pruning up to 50% sparsity, then collapses at 51%.
+  </Card>
+</CardGroup>
+
+## Extreme Fragility
+
+The algorithmic structure exists in a narrow basin of weight space:
+
+- Adding Gaussian noise σ ≥ 0.001 to trained weights causes **100% discretization failure**
+- This fragility is not a bug - it's the fundamental reason why precise engineering is essential
+- Small perturbations completely destroy the discrete attractor
+
+<Note>
+This fragility has implications beyond Strassen. If a well-defined algorithm requires such precise conditions to emerge, what does this say about reproducibility in deep learning more broadly?
+</Note>
+
+## What You'll Learn
+
+This documentation will guide you through:
+
+- [Quickstart](/quickstart): Train your first Strassen model in minutes
+- [Installation](/installation): Set up the environment and dependencies
+- Training dynamics and thermodynamic metrics
+- The two-phase protocol in detail
+- Verification and expansion procedures
+- Understanding when training succeeds vs. fails
+
+## Research Context
+
+This work presents Strassen multiplication as a case study within a broader research program on algorithmic induction. The methods and metrics developed here extend to other algorithmic structures including:
+
+- Parity tasks ([DOI: 10.5281/zenodo.18489853](https://doi.org/10.5281/zenodo.18489853))
+- Wave equations and orbital dynamics ([DOI: 10.5281/zenodo.18407920](https://doi.org/10.5281/zenodo.18407920))
+- Hamiltonian systems
+
+<Card title="Read the Full Paper" icon="book" href="https://doi.org/10.5281/zenodo.18454852">
+  Access the complete research paper with all appendices and experimental details on Zenodo.
+</Card>
+
+## Next Steps
+
+Ready to start? Head to the [Quickstart](/quickstart) to train your first Strassen model, or go to [Installation](/installation) to set up your environment.

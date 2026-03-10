@@ -1,0 +1,289 @@
+---
+title: "Thermodynamics"
+description: "API reference for temperature, entropy, and heat capacity measurements"
+---
+
+## Overview
+
+The thermodynamics module provides functions for measuring effective temperature (T_eff), entropy production, heat capacity, and other statistical mechanics quantities in neural network training.
+
+## Core Class
+
+### DLProgram
+
+Main program for running thermodynamic analysis on checkpoint collections.
+
+```python
+from boltzmann_experiments import DLProgram
+
+program = DLProgram(
+    checkpoint_dir="checkpoints",
+    results_dir="boltzmann_results"
+)
+
+program.run_full_boltzmann_program()
+```
+
+<ParamField path="checkpoint_dir" type="str" required>
+  Directory containing .pt checkpoint files to analyze
+</ParamField>
+
+<ParamField path="results_dir" type="str" default="boltzmann_results">
+  Output directory for results and visualizations
+</ParamField>
+
+### run_full_boltzmann_program
+
+Executes complete four-phase thermodynamic analysis.
+
+```python
+program.run_full_boltzmann_program()
+```
+
+**Returns:** Dictionary with results from all four phases:
+- `phase1_molecular`: Microstate sampling results
+- `phase2_entropy`: Entropy production analysis
+- `phase3_extensivity`: Scaling law verification
+- `phase4_quantum`: Quantum-classical transition analysis
+
+## Temperature Measurements
+
+### compute_alpha_purity
+
+Computes alpha purity: α = -log(δ), an inverse temperature metric.
+
+```python
+from boltzmann_experiments import CrystallographyMetrics
+
+coeffs = model.get_coefficients()
+alpha = CrystallographyMetrics.compute_alpha_purity(coeffs)
+
+if alpha > 7:
+    print("Crystal state (α > 7)")
+elif alpha < 3:
+    print("Glass state (α < 3)")
+```
+
+<ParamField path="coeffs" type="Dict[str, torch.Tensor]" required>
+  Dictionary containing 'U', 'V', 'W' coefficient tensors
+</ParamField>
+
+**Returns:** `float` - Alpha purity value. Returns 20.0 for perfect discretization (δ ≈ 0).
+
+### compute_kappa_quantum
+
+Computes quantum-regularized kappa for singular covariance states.
+
+```python
+kappa_q = CrystallographyMetrics.compute_kappa_quantum(
+    coeffs=coeffs,
+    hbar=1e-6
+)
+```
+
+<ParamField path="coeffs" type="Dict[str, torch.Tensor]" required>
+  Model coefficient tensors
+</ParamField>
+
+<ParamField path="hbar" type="float" default="1e-6">
+  Quantum regularization parameter
+</ParamField>
+
+**Returns:** `float` - Regularized condition number. Returns 1.0 for perfect ground state.
+
+### Effective Temperature (T_eff)
+
+Measures thermal fluctuations from discretization noise.
+
+```python
+# T_eff is computed automatically in pruning analysis
+from percolation_analysis import PruningPercolationAnalyzer
+
+analyzer = PruningPercolationAnalyzer(config)
+results = analyzer.analyze(weights)
+
+for i, temp in enumerate(results['effective_temperature_proxy']):
+    sparsity = results['pruning_levels'][i]
+    print(f"Sparsity {sparsity:.2f}: T_eff = {temp:.6e}")
+```
+
+**Returns:** `float` - Variance of (weights - rounded_weights)
+
+## Entropy Functions
+
+### phase2_entropy_production
+
+Analyzes entropy production during training trajectories.
+
+```python
+entropy_results = program.phase2_entropy_production()
+
+for ckpt_name, data in entropy_results['individual_results'].items():
+    print(f"{ckpt_name}:")
+    print(f"  Entropy drop: {data['entropy_drop']:.3f}")
+    print(f"  Timescale: {data['timescale']:.1f} epochs")
+    print(f"  Max production rate: {data['max_production_rate']:.3e}")
+```
+
+**Returns:** Dictionary containing:
+- `individual_results`: Per-checkpoint entropy trajectories
+- `scaling_law`: Slope and intercept of timescale vs alpha relationship
+- `mean_timescale`: Average crystallization time
+- `entropy_exponent`: Mean entropy drop magnitude
+
+### compute_generalization_entropy
+
+Computes entropy relative to successful checkpoint ensemble.
+
+```python
+# Internal method used in entropy production analysis
+entropy = program._compute_generalization_entropy(
+    params=current_params,
+    successful_ckpts=crystal_checkpoints
+)
+```
+
+<ParamField path="params" type="np.ndarray" required>
+  Current parameter vector
+</ParamField>
+
+<ParamField path="successful_ckpts" type="Dict[str, Any]" required>
+  Dictionary of successful (crystal) checkpoint data
+</ParamField>
+
+**Returns:** `float` - Negative log-density from KDE on successful parameter distribution
+
+## Heat Capacity Analysis
+
+### phase1_molecular_hypothesis
+
+Computes microstate entropy and effective volume for phase groups.
+
+```python
+molecular_results = program.phase1_molecular_hypothesis()
+
+for phase in ['crystal', 'glass', 'polycrystal']:
+    if phase in molecular_results:
+        data = molecular_results[phase]
+        print(f"\n{phase.upper()}:")
+        print(f"  Checkpoints: {data['n_checkpoints']}")
+        print(f"  Entropy: {data['entropy']:.3f}")
+        print(f"  Effective volume: {data['effective_volume']:.2e}")
+        print(f"  Mean alpha: {data['mean_alpha']:.2f}")
+```
+
+**Returns:** Dictionary with keys 'crystal', 'glass', 'polycrystal', each containing:
+- `n_checkpoints`: Number of checkpoints in this phase
+- `entropy`: Shannon entropy of parameter distribution
+- `effective_volume`: Effective phase space volume
+- `alpha_purity_correlation`: Correlation between α and purity
+- `mean_alpha`: Average alpha value for group
+
+## Scaling Laws
+
+### phase3_extensivity_law
+
+Verifies extensivity of Strassen algorithm across matrix sizes.
+
+```python
+extensivity_results = program.phase3_extensivity_law()
+
+for ckpt_name, data in extensivity_results['individual_results'].items():
+    print(f"{ckpt_name}:")
+    print(f"  Scaling exponent: {data['scaling_exponent']:.3f}")
+    print(f"  Max successful size: {data['max_size_success']}")
+    print(f"  Errors by size: {data['errors']}")
+
+if extensivity_results['extensivity_verified']:
+    print("\nExtensivity law VERIFIED across all sizes")
+```
+
+**Returns:** Dictionary containing:
+- `individual_results`: Per-checkpoint scaling analysis
+- `phi_alpha_function`: Derived Phi(alpha) scaling law
+- `extensivity_verified`: Boolean indicating universal extensivity
+
+## Quantum Transition
+
+### phase4_quantum_basis_transform
+
+Analyzes quantum-classical transition via effective Planck constant.
+
+```python
+quantum_results = program.phase4_quantum_basis_transform()
+
+for ckpt_name, data in quantum_results['individual_results'].items():
+    hbar = data['hbar_effective']
+    regime = "Quantum" if hbar > 1e-3 else "Classical"
+    print(f"{ckpt_name}: h_bar={hbar:.2e} ({regime})")
+    print(f"  Symmetry dimension: {data['symmetry_dimension']}")
+    print(f"  Uncertainty ratio: {data['uncertainty_ratio']:.3f}")
+```
+
+**Returns:** Dictionary containing:
+- `individual_results`: Per-checkpoint quantum analysis
+- `hbar_scaling_law`: String formula for hbar(alpha)
+- `quantum_regime_count`: Number of quantum-regime checkpoints
+- `classical_regime_count`: Number of classical-regime checkpoints
+
+## Output Files
+
+All phase results are saved as JSON files:
+
+```
+boltzmann_results/
+├── boltzmann_program_summary.json
+├── phase1_molecular_hypothesis.json
+├── phase2_entropy_production.json
+├── phase3_extensivity_law.json
+├── phase4_quantum_transformation.json
+└── [visualization plots]
+```
+
+## Example Usage
+
+```python
+import os
+from boltzmann_experiments import DLProgram, Config
+
+# Setup
+Config.DEVICE = 'cuda'
+Config.RANDOM_SEED = 42
+
+# Run analysis
+program = DLProgram(
+    checkpoint_dir="checkpoints",
+    results_dir="thermodynamics_analysis"
+)
+
+program.run_full_boltzmann_program()
+
+# Load results
+import json
+with open('thermodynamics_analysis/boltzmann_program_summary.json') as f:
+    results = json.load(f)
+
+# Analyze phase distribution
+phase1 = results['phase1_molecular']
+print(f"\nPhase Distribution:")
+for phase_name, phase_data in phase1.items():
+    if 'n_checkpoints' in phase_data:
+        print(f"  {phase_name}: {phase_data['n_checkpoints']} checkpoints")
+        print(f"    Entropy: {phase_data['entropy']:.2f}")
+```
+
+## Thermodynamic Metrics Summary
+
+| Metric | Symbol | Meaning | Crystal Range | Glass Range |
+|--------|--------|---------|---------------|-------------|
+| **Alpha purity** | α | Inverse temperature | α > 7 | α < 3 |
+| **Effective temperature** | T_eff | Thermal noise | < 0.01 | > 0.1 |
+| **Kappa quantum** | κ_q | Regularized sharpness | ≈ 1.0 | ≫ 1.0 |
+| **Entropy** | S | Phase space volume | Low | High |
+| **Effective hbar** | ℏ_eff | Quantum scale | < 1e-3 | > 1e-3 |
+
+## See Also
+
+- [Crystallography Analysis](/api/crystallography) - Phase characterization tools
+- [Phase Transitions](/concepts/phase-transitions) - Understanding crystal/glass phases
+- [Temperature Metric](/metrics/temperature) - Effective temperature and alpha purity

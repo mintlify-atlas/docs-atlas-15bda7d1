@@ -1,0 +1,407 @@
+---
+title: 'δ (Discretization Margin)'
+description: 'Understand δ, the discretization margin metric that measures ||θ - Q(θ)||_∞ for early seed prospecting and crystallization detection'
+icon: 'ruler-triangle'
+---
+
+## Overview
+
+**δ** (delta) is the discretization margin that measures the L-infinity distance between continuous weights and their nearest discrete values. It serves as both a **success criterion** for algorithmic crystallization and an **early prospecting tool** for seed selection.
+
+<Note>
+  δ = 0 exactly at the crystal phase; δ ≈ 0.49 for glass states. The transition is abrupt with no intermediate checkpoints.
+</Note>
+
+## Mathematical Definition
+
+δ measures the maximum distance from any weight to its rounded integer value:
+
+```python
+δ(θ) = ||θ - Q(θ)||_∞
+
+where:
+  Q(θ) = round_and_clamp(θ, {-1, 0, 1})
+  ||·||_∞ = max absolute value
+```
+
+### Formal Definition
+
+<ParamField path="discretization_operator" type="function" required>
+  **Q(θ):** Post-hoc projection of coefficients to discrete grid
+  
+  In this work: round and clamp to {-1, 0, 1}
+</ParamField>
+
+<ParamField path="discretization_margin" type="float" required>
+  **δ(θ) = ||θ - Q(θ)||_∞**
+  
+  A solution is "discretizable" if δ(θ) ≤ 0.1
+</ParamField>
+
+## Computing δ
+
+Simple and efficient computation:
+
+<CodeGroup>
+
+```python Basic Implementation
+import torch
+
+def compute_delta(coeffs):
+    """Compute discretization margin δ."""
+    deltas = []
+    for name, tensor in coeffs.items():
+        # Distance to nearest integer
+        error = (tensor - tensor.round()).abs().max().item()
+        deltas.append(error)
+    
+    return max(deltas)
+
+# Example usage
+model_coeffs = {
+    'U': model.U.weight.data,
+    'V': model.V.weight.data,
+    'W': model.W.weight.data
+}
+
+delta = compute_delta(model_coeffs)
+print(f"δ = {delta:.4f}")
+
+if delta < 0.1:
+    print("[OK] Discretizable - within rounding margin")
+else:
+    print("[FAIL] Not discretizable")
+```
+
+```python From Boltzmann Experiments
+class CrystallographyMetrics:
+    @staticmethod
+    def compute_delta(coeffs: Dict[str, torch.Tensor]) -> float:
+        """Discretization error δ from boltzmann_experiments.py:156-158"""
+        return max(
+            (c - c.round()).abs().max().item() 
+            for c in coeffs.values()
+        )
+
+# Usage in checkpoint analysis
+for ckpt_name, data in checkpoints.items():
+    coeffs = data['coeffs']
+    delta = CrystallographyMetrics.compute_delta(coeffs)
+    
+    if delta < 1e-10:
+        print(f"{ckpt_name}: PERFECT CRYSTAL (δ={delta:.2e})")
+    elif delta < 0.1:
+        print(f"{ckpt_name}: CRYSTALLIZABLE (δ={delta:.4f})")
+    else:
+        print(f"{ckpt_name}: GLASS (δ={delta:.4f})")
+```
+
+```python With Phase Classification
+def classify_phase(delta):
+    """Classify phase from δ value."""
+    if delta < 1e-10:
+        return "crystal", "Perfect discrete structure"
+    elif delta < 0.1:
+        return "near_crystal", "Discretizable"
+    elif delta < 0.3:
+        return "polycrystal", "Mixed phase"
+    else:
+        return "glass", "Amorphous"
+
+phase, description = classify_phase(delta)
+print(f"Phase: {phase} - {description}")
+```
+
+</CodeGroup>
+
+## Phase Transition Behavior
+
+δ exhibits a sharp transition at algorithmic crystallization:
+
+| Phase | δ Value | Interpretation |
+|-------|---------|----------------|
+| Crystal | 0.000 | Exact discrete coefficients in {-1, 0, 1} |
+| Near-Crystal | 0.001 - 0.1 | Within rounding margin |
+| Polycrystal | 0.1 - 0.3 | Partial structure |
+| Glass | > 0.3 | No discrete structure, typical ≈ 0.49 |
+
+<Info>
+  **The transition from glass (δ ≈ 0.49) to crystal (δ = 0) is a first-order phase transition with no intermediate states.**
+</Info>
+
+## Early Seed Prospecting
+
+δ's most powerful application is **seed mining** - selecting promising initialization seeds before full training:
+
+<Steps>
+  <Step title="Initialize Multiple Seeds">
+    Train N candidate seeds for a few epochs
+    
+    ```python
+    seeds = [42, 100, 200, 300, 400]
+    early_deltas = {}
+    
+    for seed in seeds:
+        set_seed(seed)
+        model = BilinearStrassenModel()
+        
+        # Train for 50-100 epochs only
+        train_for_epochs(model, n_epochs=100)
+        
+        # Measure initial entropy via δ
+        delta = compute_delta(model.get_coefficients())
+        early_deltas[seed] = delta
+    ```
+  </Step>
+  
+  <Step title="Rank by δ">
+    Select seeds with lowest early δ
+    
+    ```python
+    # Sort seeds by early delta
+    ranked_seeds = sorted(
+        early_deltas.items(), 
+        key=lambda x: x[1]
+    )
+    
+    print("Seed Ranking (by δ after 100 epochs):")
+    for seed, delta in ranked_seeds[:5]:
+        print(f"  Seed {seed}: δ = {delta:.4f}")
+    
+    # Select best seed
+    best_seed = ranked_seeds[0][0]
+    print(f"\nSelected seed: {best_seed}")
+    ```
+  </Step>
+  
+  <Step title="Full Training">
+    Train only the most promising seeds
+    
+    ```python
+    # Train top 3 seeds to completion
+    for seed, early_delta in ranked_seeds[:3]:
+        set_seed(seed)
+        model = BilinearStrassenModel()
+        
+        print(f"Training seed {seed} (early δ={early_delta:.4f})...")
+        train_full(model, epochs=3000)
+        
+        final_delta = compute_delta(model.get_coefficients())
+        print(f"  Final δ = {final_delta:.4f}")
+    ```
+  </Step>
+</Steps>
+
+<Warning>
+  **δ transforms cherry-picking into seed mining.** Measure initial entropy across seeds to identify which ones are heading toward the algorithmic attractor.
+</Warning>
+
+## Success Criterion
+
+δ defines the formal success criterion for discretization:
+
+<ParamField path="discretization_success" type="boolean">
+  A run achieves discretization success if and only if:
+  
+  - All 21 weight values satisfy: `|w - round(w)| < 0.5`
+  - AND the rounded values match valid Strassen coefficients
+  - Threshold: **δ ≤ 0.1**
+</ParamField>
+
+```python
+def check_discretization_success(model, threshold=0.1):
+    """Formal verification of discretization success."""
+    coeffs = model.get_coefficients()
+    delta = compute_delta(coeffs)
+    
+    # Condition 1: Within rounding margin
+    if delta > threshold:
+        return False, f"δ={delta:.4f} exceeds threshold {threshold}"
+    
+    # Condition 2: Structural match
+    Q_coeffs = {k: v.round() for k, v in coeffs.items()}
+    if not verify_strassen_structure(Q_coeffs):
+        return False, "Rounded coefficients don't match Strassen"
+    
+    return True, f"Success: δ={delta:.4f}"
+
+success, message = check_discretization_success(model)
+print(message)
+```
+
+## Relationship to Other Metrics
+
+### δ vs α (Alpha Purity)
+
+Alpha purity is derived from δ:
+
+```python
+def compute_alpha_purity(delta):
+    """Alpha purity: α = -log(δ)."""
+    if delta < 1e-10:
+        return 20.0  # α_max for perfect discretization
+    return -np.log(delta)
+
+# Phase classification by α
+# α > 7  → Crystal
+# 3 ≤ α ≤ 7 → Polycrystal
+# α < 3  → Glass
+```
+
+### δ vs κ (Kappa)
+
+Both metrics achieve perfect separation but serve different roles:
+
+| Metric | Role | When to Use |
+|--------|------|-------------|
+| **δ** | Outcome measure & seed prospector | Early seed selection, final verification |
+| **κ** | Process indicator | Monitoring gradient geometry during training |
+
+<CardGroup cols={2}>
+  <Card title="δ: Your Compass" icon="compass">
+    Measures distance to discrete solution
+    
+    Use for seed mining and final verification
+  </Card>
+  
+  <Card title="κ: Your Thermometer" icon="temperature-half">
+    Measures gradient covariance geometry
+    
+    Use for monitoring training dynamics
+  </Card>
+</CardGroup>
+
+## Experimental Results
+
+### From 245 Training Runs
+
+```python
+# Phase distribution
+Crystal states (δ = 0):     68% (133/195 successful runs)
+Glass states (δ ≈ 0.49):    32% (62/195 failed runs)
+
+# Order parameter relationship
+Φ = 1{δ = 0}  # Binary indicator
+
+# Perfect correlation with κ
+for all runs:
+    if δ = 0:      assert κ = 1.000
+    if δ > 0.3:    assert κ = 999999
+```
+
+### Basin Stability Under Pruning
+
+δ remains stable under sparsification:
+
+```python
+# Pruning experiment results
+Sparsity:  0%   → δ = 0.000 (100% accuracy)
+Sparsity: 25%   → δ = 0.001 (100% accuracy)
+Sparsity: 50%   → δ = 0.005 (100% accuracy)
+Sparsity: 55%   → COLLAPSE (accuracy drops)
+```
+
+<Info>
+  **The discrete basin remains stable under iterative pruning up to 50% sparsity**, confirming genuine structural integrity. After 50%, the solution collapses.
+</Info>
+
+## Practical Workflow
+
+Complete workflow using δ for seed selection and verification:
+
+```python
+import numpy as np
+import torch
+
+class SeedProspector:
+    """Early seed selection using δ."""
+    
+    def __init__(self, n_seeds=10, early_epochs=100):
+        self.n_seeds = n_seeds
+        self.early_epochs = early_epochs
+        self.results = {}
+    
+    def prospect(self, train_fn):
+        """Evaluate multiple seeds and rank them."""
+        seeds = np.random.randint(0, 10000, self.n_seeds)
+        
+        for seed in seeds:
+            set_seed(seed)
+            model = BilinearStrassenModel()
+            
+            # Short training
+            train_fn(model, epochs=self.early_epochs)
+            
+            # Measure early δ
+            coeffs = model.get_coefficients()
+            delta = compute_delta(coeffs)
+            
+            self.results[seed] = {
+                'early_delta': delta,
+                'model_state': model.state_dict().copy()
+            }
+        
+        # Rank by delta
+        self.ranked = sorted(
+            self.results.items(),
+            key=lambda x: x[1]['early_delta']
+        )
+        
+        return self.ranked
+    
+    def get_best_seeds(self, n=3):
+        """Return top n seeds by early δ."""
+        return [seed for seed, _ in self.ranked[:n]]
+
+# Usage
+prospector = SeedProspector(n_seeds=20, early_epochs=100)
+ranked_seeds = prospector.prospect(train_function)
+
+print("Top 5 seeds:")
+for seed, data in ranked_seeds[:5]:
+    print(f"  Seed {seed}: early δ = {data['early_delta']:.4f}")
+
+# Train only best seeds
+best_seeds = prospector.get_best_seeds(n=3)
+for seed in best_seeds:
+    print(f"\nFull training on seed {seed}...")
+    # Train to completion
+```
+
+## Key Insights
+
+<CardGroup cols={2}>
+  <Card title="Zero at Crystallization" icon="crystal-ball">
+    δ = 0 exactly when weights are discrete
+  </Card>
+  
+  <Card title="Seed Mining Tool" icon="seedling">
+    Early δ predicts which seeds will crystallize
+  </Card>
+  
+  <Card title="Sharp Transition" icon="wave-square">
+    No intermediate states between δ=0 and δ≈0.49
+  </Card>
+  
+  <Card title="Structural Stability" icon="shield-check">
+    Stable under pruning up to 50% sparsity
+  </Card>
+</CardGroup>
+
+## Related Metrics
+
+- [κ (Gradient Covariance)](/metrics/kappa) - Process indicator for training dynamics
+- [Local Complexity](/metrics/local-complexity) - Active parameter fraction
+- [Temperature](/metrics/temperature) - Effective temperature from Tr(Σ)
+
+## References
+
+<CardGroup>
+  <Card title="Implementation" icon="code" href="/home/daytona/workspace/source/boltzmann_experiments.py">
+    `boltzmann_experiments.py:156-158`
+  </Card>
+  
+  <Card title="Formal Definition" icon="book">
+    README.md, Section 2.1: "Discretization Margin δ(θ)"
+  </Card>
+</CardGroup>

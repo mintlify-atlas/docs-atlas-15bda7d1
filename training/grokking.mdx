@@ -1,0 +1,310 @@
+---
+title: Grokking Phenomenon
+description: Understanding the sudden generalization phase transition in algorithmic structure induction
+---
+
+Grokking is a late generalization phenomenon where neural networks suddenly transition from memorization to genuine understanding long after training loss has converged. In the context of Strassen algorithm induction, grokking represents a first-order phase transition from amorphous glass to crystalline structure.
+
+## Operational Definition
+
+For this work, grokking is precisely defined as:
+
+<Steps>
+  <Step title="Memorization Phase">
+    Training loss < 10⁻⁶ while test loss remains > 0.1 for at least 100 consecutive epochs
+  </Step>
+  
+  <Step title="Phase Transition">
+    Sudden drop in test loss, typically over 100-500 epochs
+  </Step>
+  
+  <Step title="Generalization Phase">
+    Test accuracy reaches 100% and remains stable, with δ → 0 and κ → 1
+  </Step>
+</Steps>
+
+## Real Training Example
+
+Here's an actual training run showing the grokking transition (seed 42, batch size 24):
+
+```text
+Epoch | Batch | Loss      | Acc%  | delta  | kappa      | Phase
+------|-------|-----------|-------|--------|------------|-------------
+0     | 24    | 1.82e-01  | 0.0   | 0.0022 | inf        | Initial
+500   | 33    | 3.96e-04  | 0.0   | 0.0034 | 3033.67    | Memorization
+900   | 53    | 3.97e-06  | 11.3  | 0.0036 | 85.00      | Early Grok
+1000  | 59    | 1.28e-06  | 44.1  | 0.0036 | 9.58       | Grokking
+1200  | 72    | 2.85e-07  | 77.8  | 0.0000 | 1.61       | Late Grok
+1500  | 92    | 1.19e-08  | 100.0 | 0.0000 | 1.08       | Crystallized
+1800  | 109   | 9.20e-10  | 100.0 | 0.0000 | 1.00       | Pure Crystal
+```
+
+<Note>
+  **Crystallization Detection:** The system automatically detects crystallization when κ ≤ 10, Acc = 100%, and δ ≈ 0. Notice the sharp transition at epoch 1500 where κ drops from 1.61 → 1.08 while accuracy reaches 100%.
+</Note>
+
+## Phase Transition Dynamics
+
+### The Three Phases
+
+Training exhibits three distinct material phases:
+
+#### 1. Glass Phase (Pre-Grokking)
+
+**Characteristics:**
+- High κ (typically > 100)
+- Low test accuracy (< 50%)
+- High δ (≈ 0.5)
+- Stable training loss but no generalization
+
+```text
+Epoch 500:
+  Loss: 3.96e-04
+  Accuracy: 0.0%
+  κ: 3033.67
+  δ: 0.0034
+  Status: Memorizing training data
+```
+
+#### 2. Grokking Transition
+
+**Characteristics:**
+- Rapidly decreasing κ (1000 → 10 → 1)
+- Rapidly increasing accuracy (0% → 100%)
+- δ falls to 0
+- Training becomes unstable (may reset)
+
+```text
+Epoch 1000 → 1500:
+  κ: 9.58 → 1.08  (92% reduction)
+  Accuracy: 44.1% → 100%  (sudden jump)
+  δ: 0.0036 → 0.0000  (discretization achieved)
+```
+
+#### 3. Crystal Phase (Post-Grokking)
+
+**Characteristics:**
+- κ = 1.000 exactly (machine precision)
+- Accuracy = 100% sustained
+- δ = 0 (all weights at integer values)
+- Stable, reproducible computation
+
+```text
+Epoch 1800:
+  Loss: 9.20e-10
+  Accuracy: 100.0%
+  κ: 1.00
+  δ: 0.0000
+  Status: PURE CRYSTAL
+```
+
+## Multiple Crystallization Events
+
+A single training run can experience multiple grokking events. The system oscillates between crystal and glass phases:
+
+```text
+[DETECTION] Crystallization detected at epoch 1500
+  κ=1.08, Acc=100.0%, delta=0.0000
+
+[RESET] Kappa increased to 12.70, restarting counter (epoch 2500)
+
+[DETECTION] Crystallization detected at epoch 5800
+  κ=1.88, Acc=100.0%, delta=0.0000
+
+[RESET] Accuracy dropped to 31.6%, restarting counter (epoch 8700)
+
+[DETECTION] Crystallization detected at epoch 10600
+  κ=2.81, Acc=100.0%, delta=0.0000
+
+[DETECTION] Final stable crystal at epoch 15500
+  κ=1.22, Acc=100.0%, delta=0.0000
+```
+
+<Warning>
+  Training does not proceed smoothly to crystallization. The system repeatedly approaches, achieves, and loses the crystal phase before final stabilization. This is characteristic of a first-order phase transition with metastability.
+</Warning>
+
+## Local Complexity and Phase Transition
+
+Local Complexity (LC) captures the grokking transition by measuring the fraction of active parameters:
+
+```python
+def compute_local_complexity(model):
+    params = torch.cat([p.flatten() for p in model.parameters()])
+    threshold = torch.quantile(torch.abs(params), 0.95)
+    active = (torch.abs(params) > 0.01 * threshold).sum()
+    return (active.float() / len(params)).item()
+```
+
+**Observed behavior:**
+- **Before grokking:** LC ≈ 442 (high complexity)
+- **During grokking:** LC rapidly decreases
+- **After grokking:** LC → 0 (minimal complexity)
+
+LC falls from 442 to ~0 exactly at the assimilation transition (Figure 6 in paper), confirming that it captures the phase change.
+
+## Thermodynamic Interpretation
+
+### Temperature (T_eff)
+
+Effective temperature is calculated from gradient covariance:
+
+```python
+T_eff = (1/d) * Tr(Σ)  # where Σ is gradient covariance
+```
+
+**Measured values:**
+- **Crystalline states (Φ = 1):** T_eff ≈ 1 × 10⁻¹⁷
+- **Glass states (Φ = 0):** T_eff ∈ [1 × 10⁻¹⁶, 8 × 10⁻⁵]
+
+The lowest glass temperature remains an order of magnitude above the crystal ceiling, allowing T_eff alone to classify phases with 100% accuracy.
+
+### Entropy (h̄)
+
+The effective Planck constant h̄_eff measures gradient noise entropy:
+
+```python
+h̄_eff = 2.0 * δ² * λ  # Uncertainty relation
+```
+
+**Phase characterization:**
+- **Crystal:** h̄_eff → 0 (minimal entropy)
+- **Glass:** h̄_eff >> 0 (high entropy)
+
+Larger batch sizes (B=512) increase h̄ entropy, trapping the model in a dense glass that is much harder to distill into pure algorithm.
+
+## Why Grokking Occurs
+
+### Narrow Basin Hypothesis
+
+Algorithmic solutions occupy an extremely narrow basin in weight space:
+
+**Noise perturbation experiments:**
+```text
+Noise Level (σ) | Success Rate
+----------------|-------------
+0.000           | 68%
+0.001           | 0%
+0.010           | 0%
+0.100           | 0%
+```
+
+Adding Gaussian noise σ ≥ 0.001 to trained weights causes 100% failure (100 trials each). The basin width is < 0.001 in weight space.
+
+### Goldilocks Batch Size
+
+Batch size controls the exploration-exploitation tradeoff:
+
+<Steps>
+  <Step title="Too Small (B=8)">
+    High gradient noise → unstable → cannot align to basin
+  </Step>
+  
+  <Step title="Optimal (B=24-128)">
+    Balanced noise → enables exploration → can find and enter basin
+  </Step>
+  
+  <Step title="Too Large (B=512)">
+    Low noise but high h̄ → trapped in glass → cannot reach basin
+  </Step>
+</Steps>
+
+### Topological Surgery
+
+The transition from training to crystallization is topological surgery:
+
+> Success in induction is not just about reaching a low loss value; it is about the weight manifold reaching a state of uniform curvature. The "exact" Strassen solution is the only zero-entropy topological attractor of the matrix multiplication manifold. When the system "crystallizes," it is mathematically equivalent to the manifold finally smoothing into a perfect, non-oscillatory sphere.
+
+The algorithmic solution is the topologically simplest form (Perelman's hypersphere) of weight space.
+
+## Predicting Grokking
+
+### κ as Predictive Metric
+
+In 60 hyperparameter configurations, κ achieves:
+
+- **AUC:** 1.000 (perfect separation)
+- **95% CI:** [1.000, 1.000]
+- **Sensitivity:** 100% (no false negatives)
+- **Specificity:** 100% (no false positives)
+
+```text
+Every run that assimilated: κ = 1.000
+Every run that failed:      κ = 999999
+```
+
+<Note>
+  The confidence interval appears degenerate because there is no overlap between classes. This indicates a first-order phase transition where there are no intermediate states.
+</Note>
+
+### δ as Early Prospector
+
+Delta (δ) allows early prospecting of seeds by measuring initial entropy:
+
+```python
+# Prospect seeds early in training
+for seed in candidate_seeds:
+    model = train(seed, epochs=100)
+    δ_initial = discretization_margin(model)
+    if δ_initial < 0.05:
+        # This seed is heading toward the crystal basin
+        continue_training(model)
+```
+
+By measuring δ after a few training epochs per seed, you can identify which seeds are heading toward the algorithmic attractor, transforming cherry-picking into systematic seed mining.
+
+See [Delta Metric](/metrics/delta) for implementation.
+
+## Stability and Fragility
+
+### Crystal Stability Under Pruning
+
+The discrete basin is stable under iterative pruning:
+
+```text
+Sparsity | Accuracy | δ      | Status
+---------|----------|--------|--------
+0%       | 100%     | 0.000  | Crystal
+25%      | 100%     | 0.000  | Stable
+50%      | 100%     | 0.097  | Stable
+55%      | 73%      | 0.352  | COLLAPSE
+```
+
+The solution remains stable up to 50% sparsity, then collapses at 51%. This demonstrates genuine structural integrity.
+
+### Fragility to Noise
+
+However, the crystal is extremely fragile to random perturbations:
+
+```text
+Test: Add Gaussian noise after training
+  σ = 0.001: 0/100 success (0%)
+  σ = 0.010: 0/100 success (0%)
+  σ = 0.100: 0/100 success (0%)
+```
+
+This extreme fragility explains why precise training conditions are essential. Without exact engineering, the system cannot reliably reach the discrete attractor.
+
+## Implications for Deep Learning
+
+### First-Order Phase Transition
+
+Grokking in this system is a first-order phase transition:
+
+- **No intermediate states:** κ is either 1 or ≫ 1
+- **Discontinuous jump:** Accuracy jumps from < 50% to 100%
+- **Latent heat:** Training becomes unstable during transition
+- **Metastability:** Multiple crystallization attempts before stabilization
+
+### Reproducibility Crisis
+
+If a well-defined algorithm like Strassen requires such precise training conditions to emerge, what does this say about reproducibility in deep learning more broadly?
+
+> Narrow basins containing algorithmic solutions may be much more common than we believe, and our inability to reach them consistently may explain many reproducibility failures in the field.
+
+## Related Resources
+
+- [Training Conditions](/training/training-conditions) - Engineering the grokking transition
+- [Kappa Metric](/metrics/kappa) - Order parameter for phase detection
+- [Delta Metric](/metrics/delta) - Early detection and seed prospecting
+- [Batch Size Effects](/training/batch-size-effects) - Controlling the exploration regime

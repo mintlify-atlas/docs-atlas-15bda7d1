@@ -1,0 +1,214 @@
+---
+title: 'Algorithmic Induction'
+description: 'How neural networks learn discrete algorithmic structure through gradient descent and sparsification'
+---
+
+## Overview
+
+Algorithmic induction is the process by which neural networks can be engineered to learn genuine discrete algorithms—not just pattern approximations—through carefully controlled training conditions. This research demonstrates that networks can crystallize into exact algorithmic structures like Strassen matrix multiplication.
+
+<Info>
+**Key Insight**: Neural networks don't spontaneously discover algorithms. They require precise engineering of batch size, weight decay, training duration, and post-hoc sparsification to reach discrete algorithmic attractors.
+</Info>
+
+## Induced vs. Discovered Structure
+
+This work focuses on **algorithmic induction** rather than discovery:
+
+| Feature | Designed | Emergent |
+|---------|----------|----------|
+| Rank 7 constraint | Yes, via sparsification | No |
+| Integer coefficients | Yes, via discretization | No |
+| Convergence to discrete values | Partial | Partial |
+| Zero-shot transfer | No | Yes, when conditions met |
+
+<Warning>
+The 68% success rate (133/195 runs) represents genuine algorithmic structure that transfers without intervention. The remaining 32% fail discretization or require fallback to canonical coefficients.
+</Warning>
+
+## Verification Framework
+
+To distinguish genuine algorithmic learning from local minima that merely generalize, three criteria must be satisfied:
+
+### 1. Discretization Success
+
+All 21 weight values (7 slots × 3 tensors U, V, W) must satisfy:
+
+```math
+|w - \text{round}(w)| < 0.5
+```
+
+AND the rounded values must match a valid Strassen coefficient structure.
+
+### 2. Expansion Success
+
+The discretized coefficients must pass verification at **all scales** without retraining:
+- 2×2 matrices
+- 4×4 matrices  
+- 8×8 matrices
+- 16×16 matrices
+- 32×32 matrices
+- 64×64 matrices
+
+Relative error must remain < 10⁻⁵ at each scale.
+
+### 3. Structural Invariance
+
+The expansion operator T must satisfy:
+
+```math
+T \circ f_n \approx f_{n'} \circ T
+```
+
+where fn and fn' are the functions implemented at scales n and n' respectively.
+
+## The Bilinear Model
+
+The core model learns a tensor decomposition for matrix multiplication:
+
+```python
+C = W @ ((U @ a) ⊙ (V @ b))
+```
+
+Where:
+- **U** ∈ ℝ⁷ˣ⁴: Input A coefficients
+- **V** ∈ ℝ⁷ˣ⁴: Input B coefficients  
+- **W** ∈ ℝ⁴ˣ⁷: Output C coefficients
+- **a**, **b**: Flattened 2×2 input matrices
+- **⊙**: Element-wise product
+
+<CodeGroup>
+```python Model Architecture
+class StrassenOperator(nn.Module):
+    def __init__(self, rank=8):
+        super().__init__()
+        self.U = nn.Parameter(torch.randn(rank, 4) * 0.5)
+        self.V = nn.Parameter(torch.randn(rank, 4) * 0.5)
+        self.W = nn.Parameter(torch.randn(4, rank) * 0.5)
+    
+    def forward(self, A, B):
+        batch = A.shape[0]
+        a = A.reshape(batch, 4)
+        b = B.reshape(batch, 4)
+        left = a @ self.U.T
+        right = b @ self.V.T
+        products = left * right
+        c = products @ self.W.T
+        return c.reshape(batch, 2, 2)
+```
+
+```python Verification
+def verify_structure(U, V, W, n_test=10000):
+    A = torch.randn(n_test, 2, 2)
+    B = torch.randn(n_test, 2, 2)
+    
+    # Forward pass with learned structure
+    a = A.reshape(n_test, 4)
+    b = B.reshape(n_test, 4)
+    C_pred = (a @ U.T * b @ V.T) @ W.T
+    C_pred = C_pred.reshape(n_test, 2, 2)
+    
+    # Ground truth
+    C_true = torch.bmm(A, B)
+    
+    error = (C_pred - C_true).abs()
+    max_err = error.max().item()
+    
+    return max_err < 1e-5
+```
+</CodeGroup>
+
+## Strassen's Seven Products
+
+When successful, the network learns the exact Strassen decomposition:
+
+```math
+\begin{align}
+M_1 &= (a_{11} + a_{22})(b_{11} + b_{22}) \\
+M_2 &= (a_{21} + a_{22}) \cdot b_{11} \\
+M_3 &= a_{11} \cdot (b_{12} - b_{22}) \\
+M_4 &= a_{22} \cdot (b_{21} - b_{11}) \\
+M_5 &= (a_{11} + a_{12}) \cdot b_{22} \\
+M_6 &= (a_{21} - a_{11})(b_{11} + b_{12}) \\
+M_7 &= (a_{12} - a_{22})(b_{21} + b_{22})
+\end{align}
+```
+
+With output reconstruction:
+
+```math
+\begin{align}
+c_{11} &= M_1 + M_4 - M_5 + M_7 \\
+c_{12} &= M_3 + M_5 \\
+c_{21} &= M_2 + M_4 \\
+c_{22} &= M_1 - M_2 + M_3 + M_6
+\end{align}
+```
+
+## Success Metrics
+
+<CardGroup cols={2}>
+  <Card title="Success Rate" icon="chart-line">
+    **68%** of runs achieve both discretization and expansion success (133/195 runs)
+  </Card>
+  
+  <Card title="Expansion Error" icon="bullseye">
+    Max relative error **< 2×10⁻⁶** across all scales up to 64×64
+  </Card>
+  
+  <Card title="Without Pruning" icon="ban">
+    **0%** success rate without Phase 2 sparsification (N=195)
+  </Card>
+  
+  <Card title="Basin Stability" icon="mountain">
+    Discrete solution stable under pruning up to **50% sparsity**
+  </Card>
+</CardGroup>
+
+## Critical Engineering Conditions
+
+Four conditions are essential for success:
+
+<Steps>
+  <Step title="Batch Size in [24, 128]">
+    The "Goldilocks zone" for crystallization. Smaller batches (B=8) remain too unstable; larger batches (B=512) increase entropy, trapping the model in amorphous glass.
+  </Step>
+  
+  <Step title="Extended Training (>1000 epochs)">
+    Weights must approach near-integer values before discretization. Grokking dynamics are essential.
+  </Step>
+  
+  <Step title="Weight Decay ≥ 1e-4">
+    Acts as thermodynamic pressure, helping weights collapse toward smaller magnitudes that discretize cleanly.
+  </Step>
+  
+  <Step title="Symmetric Initialization">
+    Initialize V = U to preserve symmetry structure in the bilinear operator.
+  </Step>
+</Steps>
+
+## Related Concepts
+
+<CardGroup cols={2}>
+  <Card title="Two-Phase Protocol" icon="list-ol" href="/concepts/two-phase-protocol">
+    The training and sparsification procedure that enables algorithmic induction
+  </Card>
+  
+  <Card title="Phase Transitions" icon="temperature-half" href="/concepts/phase-transitions">
+    How networks transition from glass to crystalline algorithmic states
+  </Card>
+  
+  <Card title="Thermodynamics" icon="fire" href="/concepts/thermodynamics">
+    Statistical mechanics framework for understanding training dynamics
+  </Card>
+</CardGroup>
+
+## Key Takeaways
+
+<Check>
+- Algorithmic induction requires **explicit engineering**, not spontaneous emergence
+- The two-phase protocol (train + sparsify + discretize) is essential
+- Success requires precise control of batch size, weight decay, and training duration
+- Genuine algorithms occupy **narrow basins** of attraction in weight space
+- Verification must test zero-shot transfer across scales, not just training accuracy
+</Check>

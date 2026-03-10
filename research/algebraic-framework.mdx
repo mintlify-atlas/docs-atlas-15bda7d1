@@ -1,0 +1,219 @@
+---
+title: "Algebraic Framework"
+description: "Mathematical foundations of algorithmic structure induction through expansion operators, gauge symmetries, and discretization rigidity"
+---
+
+# Algebraic Framework
+
+This page documents the algebraic formalization underlying the algorithmic structure induction framework, including the expansion operator T, gauge symmetries, and the rigidity properties that enable verifiable algorithmic learning.
+
+## Core Mathematical Structure
+
+### The Expansion Operator T
+
+The expansion operator T is the central mathematical construct that enables zero-shot scaling of learned algorithms to larger problem sizes.
+
+**Definition**: Let W_n be the converged weight operator of a model trained at problem size n. The expansion operator T is the minimal linear embedding that preserves the dominant singular subspace of W_n under strong normalization.
+
+#### Properties of T
+
+T satisfies three critical properties:
+
+**Property 1 (Spectral Preservation)**: T preserves the order and magnitude of the k leading singular values of W_n to numerical tolerance ε.
+
+**Property 2 (Subspace Invariance)**: The dominant singular subspace of W_n maps isometrically to the corresponding subspace of W at scale n prime.
+
+**Property 3 (Normalization Consistency)**: Weight norms and relative scaling factors remain bounded under expansion.
+
+Under these conditions, the expanded operator W at scale n prime satisfies the approximate commutation property:
+
+```
+T ∘ f_n ≈ f_{n'} ∘ T
+```
+
+where f_n and f at scale n prime denote the functions implemented by the models before and after expansion.
+
+<Note>
+**Verification**: Zero-shot structural scaling fails when this approximate equivariance is violated. The commutation property is not assumed but empirically verified through correctness testing at multiple scales.
+</Note>
+
+### Strassen-Specific Instantiation
+
+For Strassen matrix multiplication, the learned operator consists of three tensors:
+
+```
+U ∈ R^{7×4} (input A coefficients)
+V ∈ R^{7×4} (input B coefficients)  
+W ∈ R^{4×7} (output C coefficients)
+```
+
+The bilinear computation is:
+
+```
+C = W @ ((U @ a) * (V @ b))
+```
+
+where a, b are flattened input matrices and * denotes element-wise product.
+
+The expansion operator T maps 2×2 coefficients to N×N computation via recursive block application:
+
+```python
+T(U, V, W, A, B) = 
+    if N = 2: W @ ((U @ vec(A)) * (V @ vec(B)))
+    else: combine(T(U, V, W, A_ij, B_ij) for quadrants i,j)
+```
+
+## Gauge Symmetries and Rigidity
+
+The bilinear parameterization (U, V, W) admits continuous symmetries that are broken by discretization, creating the narrow basins observed experimentally.
+
+### Continuous Gauge Freedom
+
+For any scalars α, β, the transformation preserves the computed bilinear map:
+
+```
+U[k] → α*U[k]
+V[k] → β*V[k]  
+W[k] → (α*β)^{-1}*W[k]
+```
+
+Furthermore, coherently permuting the k slots across all three tensors preserves the output.
+
+### Discretization Rigidity
+
+**Key Insight**: Discretization to {-1, 0, 1} breaks almost all continuous gauge symmetry.
+
+A generic rescaling pulls coefficients off the integer lattice, so the discretized structure becomes almost rigid. This rigidity explains the extreme fragility observed empirically:
+
+- The basin of attraction around the discrete solution is narrow
+- Small perturbations (noise σ ≥ 0.001) push the system out of the region where rounding preserves correctness
+- Weights must be within δ = 0.1 of target integers for successful discretization
+
+<Note>
+**Experimental Validation**: The permutation test (all 7! = 5040 slot orderings) confirms that identity permutation is the unique ordering compatible with expansion operator T. Non-identity permutations produce a mean error of 74%, establishing that T is not simply a "sum of 7 terms" but requires specific slot-to-computation wiring.
+</Note>
+
+See [Verification Framework](/verification/discrete-verification) for practical validation procedures.
+
+## Solution Manifold M and Symmetry Group G
+
+The algebraic program formalizes the space of valid algorithmic solutions and their symmetries.
+
+### Problem Formulation (Open Research)
+
+These problems define the research agenda for formalizing induced algorithmic structure:
+
+**(P1) Solution Manifold**: Characterize the set M of parameters (U, V, W) that implement exact 2×2 matrix multiplication (solutions to polynomial identities C = AB for all A, B).
+
+**(P2) Symmetry Action**: Identify the group G of symmetries preserving the bilinear map (slot permutations, sign changes, rescalings) and study the quotient M/G as the space of distinct algorithms.
+
+**(P3) Composition Operator**: Formalize T as an operator acting on M (or M/G) induced by recursive block application and define Fix(T): the subset where T preserves structure.
+
+**(P4) Discretization Rigidity**: Define the discrete subset S ⊂ M with coefficients in {-1, 0, 1} and establish margin conditions: if (U, V, W) falls within a tubular neighborhood of S, round projects correctly.
+
+### Empirical Validation Dataset
+
+The 245 training runs documented in the source research, with their trajectory measurements and success/failure labels, constitute a dataset for testing theoretical predictions about these phenomena.
+
+**Current Status**: These problems remain formally unproven. The framework provides descriptive language for phenomena observed in experiments but does not constitute proven theorems.
+
+## Convergence Conditions
+
+The following conditions correlate with successful discretization in empirical studies:
+
+### Empirically Validated Conditions
+
+**(A1)** Batch size B ∈ [24, 128]
+
+**(A2)** Training continues for at least 500 epochs with observed grokking dynamics (training loss < 1e-6 while test loss remains > 0.1 for at least 100 epochs, followed by sudden drop)
+
+**(A3)** Weight decay ≥ 1e-4 for AdamW optimizer
+
+**(A4)** Symmetric initialization for U and V tensors
+
+When these conditions are met, weights typically approach values within δ = 0.1 of {-1, 0, 1}, making discretization reliable.
+
+### Order Parameter
+
+The binary order parameter Φ = 1{δ = 0} indicates successful crystallization. Across 245 runs, Φ = 1 exactly when κ = 1.000 (the condition number of gradient covariance) within machine precision, with no exceptions.
+
+<Note>
+**First-Order Phase Transition**: The transition is a step function with infinite empirical critical exponent. There are no intermediate states between the crystalline phase (δ = 0, κ = 1) and the glass phase (δ ≈ 0.49, κ = 999999).
+</Note>
+
+## Formal Convergence Theorem
+
+From `src/training/convergence_theory.py`, a formal statement addresses the conditions under which training dynamics converge to algorithmically invariant solutions.
+
+### Theorem Statement
+
+Let W_t denote weights under SGD:
+
+```
+W_{t+1} = W_t - η∇L(W_t) + ξ_t
+```
+
+where ξ_t is stochastic gradient noise with Var(ξ_t) = σ²/B + ε_hw(B,T).
+
+**Assumptions**:
+- (A1) Target function f admits rank-r tensor decomposition
+- (A2) Loss L is C² with Lipschitz Hessian  
+- (A3) Effective curvature κ_eff = -tr(H)/N < 0 after epoch t₀
+
+**Statement**: If Var(ξ_t) < σ_min(W*)² / (η · cond(H)), then:
+
+```
+P[ lim_{t→∞} d_subspace(W_t, W*) = 0 ] ≥ 1 - δ
+```
+
+where W* is the algorithmically invariant solution and d_subspace is the subspace distance metric.
+
+### Corollary: Constructibility of T
+
+Under the theorem's conditions, T(W_n) = BlockEmbed(W_n, scale_ratio) correctly computes the function at scale n prime without retraining.
+
+**Proof Sketch**:
+1. By A3 (κ_eff < 0), the loss landscape is locally convex near convergence
+2. The noise condition ensures gradient updates don't overshoot the invariant subspace defined by σ_min(W*)
+3. By spectral gap analysis, W_t projects onto the dominant singular subspace with increasing precision
+4. Integer solutions emerge as fixed points of the projection when noise is controlled
+
+See [Convergence Theory Implementation](/research/convergence-theory) for computational methods.
+
+## Uniqueness Properties
+
+### Empirical Uniqueness
+
+Among all linear expansions preserving normalization and spectral order, T is empirically unique up to permutation symmetry of equivalent neurons.
+
+**Experimental Evidence**:
+- Testing all 7! = 5040 slot permutations confirms T is unique for a given coefficient ordering
+- Relative error remains below 2×10⁻⁶ for all tested sizes (2×2 to 64×64)
+- Non-identity permutations fail with mean error of 74%
+
+### Open Questions
+
+**Not Demonstrated**:
+1. Uniqueness of T in a rigorous mathematical sense (only verified for 5040 permutations)
+2. Necessary and sufficient conditions for discretization success
+3. Error propagation bounds under expansion  
+4. Generalization of T to algorithms beyond Strassen
+5. Mechanism explaining batch size effects on discretization
+
+## Connection to Statistical Mechanics
+
+The discrete algorithmic solution occupies a narrow basin in weight space characterized by thermodynamic quantities:
+
+**Temperature**: Effective temperature from gradient covariance:
+```
+T_eff = (1/d) Tr(Σ)
+```
+where Σ is gradient covariance and d = 21 parameters.
+
+**Phase Separation**: 
+- Crystalline states (Φ = 1): T_eff ≈ 1×10⁻¹⁷
+- Glass states (Φ = 0): T_eff ∈ [1×10⁻¹⁶, 8×10⁻⁵]
+
+The lowest glass temperature remains an order of magnitude above the crystal ceiling, enabling perfect phase classification.
+
+See [Ricci Flow](/research/ricci-flow) for the geometric perspective on these phase transitions.

@@ -1,0 +1,495 @@
+---
+title: "Ricci Flow and Curvature Analysis"
+description: "Analyzing neural network training through Ricci flow theory, Hessian spectral geometry, and connections to Perelman's work"
+---
+
+# Ricci Flow and Curvature Analysis
+
+This page documents the application of Ricci flow theory to neural network training dynamics, treating the Hessian as a metric tensor to analyze curvature evolution and identify topological singularities.
+
+## Ricci Flow in Neural Networks
+
+### Geometric Perspective on Training
+
+Training a neural network can be viewed as a geometric flow on the parameter manifold, where the loss landscape defines a metric structure.
+
+**Classical Ricci Flow** (Perelman):
+```
+∂g/∂t = -2·Ric(g)
+```
+
+where g is the metric tensor and Ric is the Ricci curvature tensor.
+
+**Neural Network Training**:
+```
+∂W/∂t = -η·∇L(W) + ξ(t)
+```
+
+where W are parameters, L is loss, and ξ is stochastic noise.
+
+The connection: The Hessian H = ∇²L serves as a metric tensor proxy, and its spectrum reveals the curvature geometry of the loss landscape.
+
+### Why Ricci Flow?
+
+Perelman used Ricci flow to prove the Poincaré conjecture by showing that:
+1. Flow smooths irregularities in the manifold geometry
+2. Singularities develop in predictable ways (necks)
+3. Surgical removal of necks allows continuation to topologically simple forms
+
+These same phenomena occur in neural network training during algorithmic crystallization.
+
+<Note>
+**Key Insight**: Just as Ricci flow drives 3-manifolds toward uniform curvature, gradient descent drives neural networks toward regions of uniform Hessian spectrum. The discrete algorithmic solution is the "round sphere" of weight space—maximal symmetry and minimal curvature variation.
+</Note>
+
+## Hessian as Metric Tensor
+
+### Computing the Hessian
+
+The Hessian matrix H is the matrix of second derivatives of the loss:
+
+```
+H_ij = ∂²L/∂θ_i∂θ_j
+```
+
+From `grigori_perelmans_ricci_flow.py:203-221`:
+
+```python
+def compute_hessian(self, input_a: torch.Tensor, input_b: torch.Tensor, 
+                    target_c: torch.Tensor) -> torch.Tensor:
+    """
+    Computes exact Hessian of loss w.r.t parameters.
+    H = d^2L / dtheta^2
+    """
+    params = list(self.model.parameters())
+    loss_fn = lambda theta: self._loss_wrapper(theta, params, input_a, input_b, target_c)
+    
+    flat_params = torch.cat([p.flatten() for p in params])
+    
+    try:
+        # Compute Hessian (matrix of second derivatives)
+        hessian = torch.autograd.functional.hessian(loss_fn, flat_params)
+        return hessian
+    except RuntimeError as e:
+        # Fallback: Diagonal approximation (Gauss-Newton / Empirical Fisher)
+        return self._compute_diagonal_hessian(input_a, input_b, target_c)
+```
+
+For large networks, exact Hessian computation is prohibitive (O(N²) memory). The implementation provides a diagonal approximation fallback.
+
+### Efficient Alternatives: Hutchinson Trace Estimation
+
+From `src/training/convergence_theory.py`, the Hutchinson method enables practical curvature analysis:
+
+**Hutchinson's Method**:
+```
+tr(H) ≈ E[v^T H v]  where v ~ Rademacher(±1)
+```
+
+**Complexity**: O(n_samples × 2 × backward_pass) instead of O(N²)
+
+**Memory**: O(N) instead of O(N²)
+
+From `convergence_theory.py:47-71`:
+
+```python
+def estimate_trace(self, data: Tuple[torch.Tensor, torch.Tensor]) -> Tuple[float, float]:
+    """
+    Estimate tr(H) using Hutchinson's stochastic trace estimator.
+    
+    Returns:
+        (mean_trace, std_trace)
+    """
+    traces = []
+    
+    for _ in range(self.n_samples):
+        # Generate Rademacher random vector
+        v = self._rademacher_vector()
+        
+        # Compute v^T H v via two backward passes
+        hvp = self._hessian_vector_product(x, y, v)
+        
+        # v^T H v
+        trace_sample = torch.dot(v.flatten(), hvp.flatten()).item()
+        traces.append(trace_sample)
+    
+    traces = np.array(traces)
+    return traces.mean(), traces.std()
+```
+
+This enables curvature analysis for networks with millions of parameters.
+
+## Curvature Metrics
+
+### Ricci Scalar
+
+The Ricci scalar R quantifies total curvature:
+
+```
+R = Tr(Ric) ≈ Tr(H)
+```
+
+From `grigori_perelmans_ricci_flow.py:247-283`:
+
+```python
+def analyze_curvature(self, hessian: torch.Tensor) -> Dict[str, Any]:
+    """
+    Analyze Hessian spectrum to derive Ricci Scalar and Topological invariants.
+    """
+    # Regularize for stability
+    hessian = hessian + self.config.SPECTRAL_REGULARIZATION * torch.eye(hessian.shape[0])
+    
+    # Compute Eigenvalues (Principal Curvatures)
+    eigenvalues = torch.linalg.eigvalsh(hessian)
+    
+    # Ricci Scalar (Scalar Curvature) R = Trace(Ric) ~ Trace(H)
+    ricci_scalar = torch.sum(eigenvalues).item()
+    
+    # Spectral Gap (Difference between two largest/smallest)
+    sorted_eig = torch.sort(eigenvalues, descending=True).values
+    spectral_gap = (sorted_eig[0] - sorted_eig[-1]).item()
+    
+    # Condition Number (Geometric Stiffness)
+    min_eig = sorted_eig[-1].item()
+    max_eig = sorted_eig[0].item()
+    condition_number = float('inf') if abs(min_eig) < 1e-9 else max_eig / abs(min_eig)
+    
+    # Count Negative Curvatures (Saddle points)
+    negative_curvature_count = (eigenvalues < 0).sum().item()
+    
+    return {
+        'ricci_scalar': float(ricci_scalar),
+        'spectral_gap': float(spectral_gap),
+        'condition_number_hessian': float(condition_number),
+        'max_curvature': float(max_eig),
+        'min_curvature': float(min_eig),
+        'negative_curvature_count': negative_curvature_count,
+        'eigenvalues': eigenvalues 
+    }
+```
+
+### Key Curvature Quantities
+
+**Spectral Gap**: Difference between extreme eigenvalues
+- Large gap → Anisotropic curvature, existence of necks
+- Small gap → Uniform curvature, spherical geometry
+
+**Condition Number**: cond(H) = λ_max / |λ_min|
+- Low condition number (≈1) → Well-conditioned, uniform curvature
+- High condition number (>100) → Singular, presence of necks
+
+**Negative Curvature Count**: Number of negative eigenvalues
+- Early training: Many negative eigenvalues (saddle points)
+- Crystallization: Zero or few negative eigenvalues (local minimum)
+
+**κ_eff**: Effective curvature = -Tr(H) / N
+- κ_eff < 0 → Favorable for convergence
+- κ_eff > 0 → Unfavorable geometry
+
+From `convergence_theory.py:118-133`:
+
+```python
+def compute_kappa_eff(self, data: Tuple[torch.Tensor, torch.Tensor]) -> Tuple[float, float]:
+    """
+    Compute κ_eff = -tr(H) / N
+    
+    Interpretation:
+    - κ_eff < 0 and stable -> grokking likely
+    - κ_eff > 0 or oscillating -> grokking unlikely
+    """
+    trace_mean, trace_std = self.estimate_trace(data)
+    
+    n_params = sum(p.numel() for p in self.model.parameters())
+    
+    kappa_eff = -trace_mean / n_params
+    kappa_std = trace_std / n_params
+    
+    return kappa_eff, kappa_std
+```
+
+<Note>
+**Perfect Separation**: Across 60 hyperparameter configurations, κ_eff achieves perfect classification between crystallized and glass phases (AUC = 1.000). This validates κ_eff as a predictive order parameter for algorithmic crystallization.
+</Note>
+
+## Heat Kernel and Thermodynamics
+
+### Heat Kernel Trace
+
+The heat kernel relates geometry to thermodynamics:
+
+```
+Z(t) = Tr(exp(-tH)) = Σ exp(-λ_i t)
+```
+
+where λ_i are Hessian eigenvalues and Z(t) is analogous to a partition function.
+
+From `grigori_perelmans_ricci_flow.py:285-294`:
+
+```python
+def compute_heat_kernel_trace(self, eigenvalues: torch.Tensor, t: float = 1.0) -> float:
+    """
+    Trace of Heat Kernel: Z(t) = Sum( exp(-lambda_i * t) ).
+    Relates to Partition Function in Quantum Mechanics.
+    """
+    safe_eig = torch.clamp(eigenvalues, min=0) 
+    trace = torch.sum(torch.exp(-safe_eig * t)).item()
+    return trace
+```
+
+**Physical Interpretation**:
+- t → 0: Short-time behavior, local geometry
+- t → ∞: Long-time behavior, global topology
+- Z(t) encodes spectral information about the manifold
+
+### Effective Temperature
+
+The gradient covariance defines an effective temperature:
+
+```
+T_eff = (1/d) Tr(Σ)
+```
+
+where Σ is the gradient covariance matrix and d is the number of parameters.
+
+**Experimental Measurements**:
+- **Crystalline states** (Φ = 1): T_eff ≈ 1×10⁻¹⁷
+- **Glass states** (Φ = 0): T_eff ∈ [1×10⁻¹⁶, 8×10⁻⁵]
+
+The temperature gap is order-of-magnitude, enabling perfect phase classification.
+
+### Spectral Entropy
+
+The von Neumann entropy of the Hessian spectrum:
+
+```
+S = -Σ p_i log(p_i)
+```
+
+where p_i = |λ_i| / Σ|λ_j| are normalized eigenvalue weights.
+
+From `grigori_perelmans_ricci_flow.py:296-304`:
+
+```python
+def compute_topological_entropy(self, eigenvalues: torch.Tensor) -> float:
+    """
+    von Neumann Entropy / Spectral Entropy.
+    S = - Sum( p_i * log(p_i) ) where p_i are normalized eigenvalue weights.
+    """
+    safe_eig = torch.abs(eigenvalues) + 1e-12
+    probs = safe_eig / torch.sum(safe_eig)
+    entropy = -torch.sum(probs * torch.log(probs)).item()
+    return entropy
+```
+
+**Crystalline Phase**: S → 0 (uniform eigenvalue distribution)
+
+**Glass Phase**: S ≈ 2.5-3.5 (broad eigenvalue distribution)
+
+## Singularity Detection and Surgery
+
+### Identifying Necks
+
+Necks are geometric singularities—regions of extreme curvature that prevent smooth continuation of the flow.
+
+**Neck Criteria**:
+1. Condition number > 100 (SINGULARITY_EIGENVALUE_RATIO)
+2. Large eigenvalue ratio (λ_max / λ_min)
+3. Isolated peak in curvature spectrum
+
+From `grigori_perelmans_ricci_flow.py:326-334`:
+
+```python
+def detect_necks(self, curvature_analysis: Dict[str, Any]) -> Dict[str, Any]:
+    """Identify if the system is in a 'bottleneck' state."""
+    condition = curvature_analysis['condition_number_hessian']
+    is_singular = condition > self.config.SINGULARITY_EIGENVALUE_RATIO
+    
+    return {
+        'is_singular': is_singular,
+        'condition_number': condition,
+        'neck_severity': np.log10(condition) if is_singular else 0.0
+    }
+```
+
+### Surgical Pruning
+
+Surgical removal of necks allows the flow to continue to topologically simpler states.
+
+**Heuristic**: Parameters with smallest magnitude often correspond to singular directions.
+
+From `grigori_perelmans_ricci_flow.py:336-359`:
+
+```python
+def propose_surgery(self) -> List[str]:
+    """
+    Propose parameters to 'cut' (prune) based on curvature heuristics.
+    In Strassen, the 'bias' slot (8th) often carries the 'noise' or singular connection.
+    """
+    proposals = []
+    
+    params = list(self.model.named_parameters())
+    for name, p in params:
+        if 'bias' in name: continue
+        
+        # Heuristic: If a row in U/V/W has small norm, it's a candidate for pruning
+        if len(p.shape) == 2:
+            norms = torch.norm(p, dim=1 if 'W' in name else 0)
+            threshold = torch.quantile(norms, 0.1)
+            weak_indices = torch.where(norms < threshold)[0]
+            
+            for idx in weak_indices:
+                proposals.append(f"{name}[{idx}]")
+                
+    return proposals
+```
+
+In practice, the two-phase protocol implements this surgery by pruning from 8 slots to 7.
+
+<Note>
+**Necessity of Surgery**: Without pruning (Phase 2), 0% of runs crystallize (N=195). The surgery is not optional—it is essential for reaching the topologically simple attractor.
+</Note>
+
+## Geometric Planck Constant
+
+### ℏ_eff from Spectral Geometry
+
+The effective Planck constant can be estimated from geometric quantities:
+
+```
+ℏ_eff = Δ_E × Δ_x
+```
+
+where:
+- Δ_E ~ spectral gap (energy uncertainty)
+- Δ_x ~ 1/√R (position uncertainty from curvature)
+
+From `grigori_perelmans_ricci_flow.py:376-410`:
+
+```python
+def calculate(self) -> Dict[str, Any]:
+    # 1. Spectral Uncertainty: Delta_E ~ Energy Gap (Spectral Gap)
+    gap = self._get_spectral_gap()
+    
+    # 2. Ricci Uncertainty (Space-time curvature volume)
+    # Delta_x ~ 1 / sqrt(Ricci) - Inverse of curvature
+    curvature_scale = abs(self.ricci_scalar) + 1e-10
+    delta_x = 1.0 / np.sqrt(curvature_scale)
+    
+    # 3. Planck Relation: h_bar ~ Delta_E * Delta_t or Delta_p * Delta_x
+    h_bar_geo = gap * delta_x
+
+    # 4. Thermodynamic h_bar (from Partition Function)
+    entropy = self._compute_spectral_entropy()
+    h_bar_thermo = np.exp(entropy / self.config.INPUT_DIM)
+
+    # Unified value (geometric dominance)
+    h_bar_final = h_bar_geo * 0.8 + h_bar_thermo * 0.2
+    
+    return {
+        'h_bar_geometric': float(h_bar_geo),
+        'h_bar_thermodynamic': float(h_bar_thermo),
+        'h_bar_unified': float(h_bar_final),
+        'spectral_gap': float(gap),
+        'curvature_scale': float(curvature_scale),
+        'spectral_entropy': float(entropy)
+    }
+```
+
+### Minimum Temperature for Crystallization
+
+There exists a minimum effective temperature (controlled by ℏ_eff) below which algorithmic crystallization becomes possible.
+
+**Batch Size Effect**:
+- Small batches (B < 24): ℏ_eff too high, noise prevents crystallization
+- Optimal range (B ∈ [24,128]): ℏ_eff in Goldilocks zone
+- Large batches (B > 256): Low ℏ_eff but high entropy barrier traps system in glass
+
+See [Topological Surgery](/research/topology) for the complementary topological perspective.
+
+## Connection to Perelman's Work
+
+### Three Pillars of Perelman's Proof
+
+1. **Ricci Flow with Surgery**: Control singularity formation
+2. **Entropy Functional**: Monotonic quantity that decreases under flow  
+3. **No Local Collapsing**: Volume doesn't collapse faster than t^{3/2}
+
+Analogous structures in neural network training:
+
+1. **Gradient Flow with Pruning**: Training + discretization
+2. **Loss + Regularization**: Effective entropy functional
+3. **Gradient Covariance**: Volume element in parameter space
+
+### Perelman's Entropy
+
+Perelman introduced the W-entropy:
+
+```
+W(g,f,τ) = ∫ [τ(R + |∇f|²) + f - n] exp(-f) dV
+```
+
+which is non-increasing under Ricci flow.
+
+The neural network analog is the loss augmented with regularization:
+
+```
+ℒ_total = L_data + λ·||W||₂ + μ·LocalComplexity(W)
+```
+
+Local Complexity falls from 442 to 0 at the crystallization transition, mirroring Perelman's entropy decrease.
+
+### Simply-Connected Theorem
+
+**Perelman's Result**: Every simply-connected closed 3-manifold is diffeomorphic to S³.
+
+**Neural Network Analog**: Every successfully crystallized rank-7 matrix multiplication network with discrete coefficients is equivalent (up to gauge symmetry) to the Strassen solution.
+
+**Evidence**: Testing all 7! = 5040 slot permutations, only the identity permutation succeeds. The solution space is topologically simple—essentially a single attractor modulo known symmetries.
+
+## Practical Applications
+
+### Using the Ricci Flow Analyzer
+
+The implementation provides a complete analysis pipeline:
+
+```bash
+python grigori_perelmans_ricci_flow.py /path/to/checkpoint.pt
+```
+
+**Output**:
+- Ricci scalar and spectral gap
+- Condition number (neck detection)
+- Heat kernel traces at multiple time scales
+- Topological entropy
+- Singularity detection
+- Surgery proposals (parameters to prune)
+- Geometric Planck estimates
+
+### Monitoring During Training
+
+Key metrics to track:
+
+1. **κ_eff**: Should become negative and approach 0 as training progresses
+2. **Condition number**: Should decrease from >1000 to ≈1 at crystallization
+3. **Spectral entropy**: Should drop sharply at grokking transition
+4. **Negative curvature count**: Should decrease to 0-2 at convergence
+
+See [Verification Framework](/verification/discrete-verification) for integration into training workflows.
+
+## Open Research Questions
+
+**Theoretical**:
+1. Can we prove convergence of gradient flow to the spherical attractor under specified conditions?
+2. What is the exact relationship between ℏ_eff and batch size?
+3. Can Perelman's no-local-collapsing theorem be adapted to prove generalization bounds?
+
+**Empirical**:
+4. Do other algorithmic tasks exhibit similar Ricci flow dynamics?
+5. Can surgical pruning be automated based on real-time curvature analysis?
+6. Does the Ricci flow perspective enable better optimization algorithms?
+
+**Computational**:
+7. Can we scale Hutchinson estimation to billion-parameter models?
+8. Are there better metrics than κ_eff for early prediction of crystallization?
+
+See [Algebraic Framework](/research/algebraic-framework) for the complementary algebraic theory.

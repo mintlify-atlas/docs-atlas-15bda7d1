@@ -1,0 +1,400 @@
+---
+title: 'Strassen Core'
+description: 'Core Strassen matrix multiplication functions using grokked tensor decomposition'
+icon: 'cube'
+---
+
+## Overview
+
+The Strassen core module provides the fundamental implementation of Strassen's algorithm using a learned rank-7 tensor decomposition. The algorithm recursively applies the grokked 2×2 base case to multiply matrices of any power-of-2 dimension.
+
+## Import
+
+```python
+from strassen_core import strassen, strassen_2x2, get_coefficients, multiplication_count
+```
+
+---
+
+## strassen_2x2
+
+```python
+def strassen_2x2(A, B)
+```
+
+Multiplies two 2×2 matrices using the grokked rank-7 tensor decomposition. This is the base case that achieves exactly 7 scalar multiplications instead of the standard 8.
+
+### Parameters
+
+<ParamField path="A" type="torch.Tensor" required>
+  Input matrix A of shape `(2, 2)` or `(batch, 2, 2)`. Elements should be of type `float32` or `float64`.
+</ParamField>
+
+<ParamField path="B" type="torch.Tensor" required>
+  Input matrix B of shape `(2, 2)` or `(batch, 2, 2)`. Must have the same shape and dtype as A.
+</ParamField>
+
+### Returns
+
+<ResponseField name="result" type="torch.Tensor">
+  The matrix product A @ B of shape `(2, 2)` or `(batch, 2, 2)`. Computed using the learned U, V, W coefficient matrices with the formula:
+  
+  ```
+  C = ((A @ U^T) * (B @ V^T)) @ W^T
+  ```
+  
+  Where U, V, W are the grokked rank-7 decomposition coefficients.
+</ResponseField>
+
+### Implementation Details
+
+The function:
+1. Loads pre-trained weights from `weights.pt` (lazy loading on first call)
+2. Reshapes inputs from (2, 2) to flat vectors of length 4
+3. Applies the tensor decomposition: `c = ((a @ U^T) * (b @ V^T)) @ W^T`
+4. Reshapes output back to (2, 2)
+5. Handles batched inputs automatically
+
+### Example
+
+```python
+import torch
+from strassen_core import strassen_2x2
+
+# Single matrix multiplication
+A = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
+B = torch.tensor([[5.0, 6.0], [7.0, 8.0]])
+C = strassen_2x2(A, B)
+print(C)
+# tensor([[19., 22.],
+#         [43., 50.]])
+
+# Batched multiplication
+A_batch = torch.randn(32, 2, 2)
+B_batch = torch.randn(32, 2, 2)
+C_batch = strassen_2x2(A_batch, B_batch)
+print(C_batch.shape)  # torch.Size([32, 2, 2])
+```
+
+---
+
+## strassen
+
+```python
+def strassen(X, Y)
+```
+
+Recursively multiplies two square matrices of power-of-2 dimension using Strassen's algorithm. Achieves O(n^2.807) complexity instead of O(n^3).
+
+### Parameters
+
+<ParamField path="X" type="torch.Tensor" required>
+  Input matrix X of shape `(n, n)` or `(..., n, n)` where n is a power of 2. Supports arbitrary batch dimensions.
+</ParamField>
+
+<ParamField path="Y" type="torch.Tensor" required>
+  Input matrix Y with the same shape as X. Both matrices must be square with power-of-2 dimensions.
+</ParamField>
+
+### Returns
+
+<ResponseField name="result" type="torch.Tensor">
+  The matrix product X @ Y computed using recursive Strassen decomposition. Has the same shape as the inputs.
+</ResponseField>
+
+### Algorithm
+
+For matrices larger than 2×2, the algorithm:
+
+1. **Partition** each matrix into 4 quadrants:
+   ```
+   X = [X11 X12]    Y = [Y11 Y12]
+       [X21 X22]        [Y21 Y22]
+   ```
+
+2. **Compute** 7 recursive products (Strassen's formulas):
+   ```python
+   M1 = strassen(X11 + X22, Y11 + Y22)
+   M2 = strassen(X21 + X22, Y11)
+   M3 = strassen(X11, Y12 - Y22)
+   M4 = strassen(X22, Y21 - Y11)
+   M5 = strassen(X11 + X12, Y22)
+   M6 = strassen(X21 - X11, Y11 + Y12)
+   M7 = strassen(X12 - X22, Y21 + Y22)
+   ```
+
+3. **Reconstruct** result quadrants:
+   ```python
+   C11 = M1 + M4 - M5 + M7
+   C12 = M3 + M5
+   C21 = M2 + M4
+   C22 = M1 - M2 + M3 + M6
+   ```
+
+4. **Base case**: When n=2, calls `strassen_2x2()` with the grokked operator
+
+### Complexity
+
+- **Time**: O(n^2.807) vs O(n^3) for standard multiplication
+- **Space**: O(n^2) for recursion stack
+- **Multiplications**: 7^(log₂ n) vs n^3 scalar multiplications
+
+### Example
+
+```python
+import torch
+from strassen_core import strassen
+
+# 4x4 multiplication
+X = torch.randn(4, 4)
+Y = torch.randn(4, 4)
+Z = strassen(X, Y)
+
+# Verify correctness
+Z_standard = X @ Y
+error = (Z - Z_standard).abs().max()
+print(f"Max error: {error:.2e}")  # Should be < 1e-5
+
+# Works with larger power-of-2 sizes
+X_large = torch.randn(64, 64)
+Y_large = torch.randn(64, 64)
+Z_large = strassen(X_large, Y_large)
+
+# Supports batching
+X_batch = torch.randn(16, 32, 32)
+Y_batch = torch.randn(16, 32, 32)
+Z_batch = strassen(X_batch, Y_batch)
+print(Z_batch.shape)  # torch.Size([16, 32, 32])
+```
+
+### Constraints
+
+<Warning>
+  - Matrices must be square: `X.shape[-1] == X.shape[-2]`
+  - Dimension must be a power of 2: n in the set of 2, 4, 8, 16, 32, etc.
+  - Both inputs must have identical shapes
+  - Raises `AssertionError` if constraints are violated
+</Warning>
+
+---
+
+## get_coefficients
+
+```python
+def get_coefficients()
+```
+
+Returns a copy of the learned Strassen coefficient matrices U, V, W from the grokked tensor decomposition.
+
+### Returns
+
+<ResponseField name="U" type="torch.Tensor">
+  Coefficient matrix U of shape `(7, 4)`. Each row corresponds to one of the 7 Strassen products and defines how to linearly combine the 4 elements of the flattened matrix A.
+</ResponseField>
+
+<ResponseField name="V" type="torch.Tensor">
+  Coefficient matrix V of shape `(7, 4)`. Each row defines how to linearly combine the 4 elements of the flattened matrix B.
+</ResponseField>
+
+<ResponseField name="W" type="torch.Tensor">
+  Coefficient matrix W of shape `(4, 7)`. Each row defines how to combine the 7 intermediate products to produce one element of the output matrix C.
+</ResponseField>
+
+### Coefficient Structure
+
+The canonical Strassen coefficients discovered through thermodynamic grokking:
+
+**U matrix** (input A combinations):
+```
+M1: [1, 0, 0, 1]   # a11 + a22
+M2: [0, 0, 1, 1]   # a21 + a22
+M3: [1, 0, 0, 0]   # a11
+M4: [0, 0, 0, 1]   # a22
+M5: [1, 1, 0, 0]   # a11 + a12
+M6: [-1, 0, 1, 0]  # a21 - a11
+M7: [0, 1, 0, -1]  # a12 - a22
+```
+
+**V matrix** (input B combinations):
+```
+M1: [1, 0, 0, 1]   # b11 + b22
+M2: [1, 0, 0, 0]   # b11
+M3: [0, 1, 0, -1]  # b12 - b22
+M4: [-1, 0, 1, 0]  # b21 - b11
+M5: [0, 0, 0, 1]   # b22
+M6: [1, 1, 0, 0]   # b11 + b12
+M7: [0, 0, 1, 1]   # b21 + b22
+```
+
+**W matrix** (output combinations):
+```
+c11: M1 + M4 - M5 + M7
+c12: M3 + M5
+c21: M2 + M4
+c22: M1 - M2 + M3 + M6
+```
+
+### Example
+
+```python
+from strassen_core import get_coefficients
+import torch
+
+U, V, W = get_coefficients()
+
+print("U (input A):", U.shape)  # torch.Size([7, 4])
+print("V (input B):", V.shape)  # torch.Size([7, 4])
+print("W (output):", W.shape)   # torch.Size([4, 7])
+
+# Verify the decomposition manually
+A = torch.randn(2, 2)
+B = torch.randn(2, 2)
+
+a = A.flatten()
+b = B.flatten()
+
+# Compute using decomposition
+left = a @ U.T      # (7,) - input A products
+right = b @ V.T     # (7,) - input B products
+products = left * right  # (7,) - elementwise multiplication
+c = products @ W.T  # (4,) - output reconstruction
+C = c.reshape(2, 2)
+
+# Verify against standard multiplication
+C_true = A @ B
+error = (C - C_true).abs().max()
+print(f"Error: {error:.2e}")  # Should be ~0
+```
+
+---
+
+## multiplication_count
+
+```python
+def multiplication_count(n)
+```
+
+Computes the total number of scalar multiplications performed by the Strassen algorithm for an n×n matrix, where n is a power of 2.
+
+### Parameters
+
+<ParamField path="n" type="int" required>
+  Matrix dimension. Must be a power of 2 (2, 4, 8, 16, 32, ...).
+</ParamField>
+
+### Returns
+
+<ResponseField name="count" type="int">
+  Total number of scalar multiplications. Computed as 7^(log₂ n) using the recursive formula:
+  
+  ```
+  count(2) = 7
+  count(n) = 7 * count(n/2)
+  ```
+  
+  This equals n^(log₂ 7) ≈ n^2.807.
+</ResponseField>
+
+### Comparison
+
+| Matrix Size | Strassen Mults | Standard Mults | Reduction |
+|-------------|----------------|----------------|----------|
+| 2×2         | 7              | 8              | 12.5%    |
+| 4×4         | 49             | 64             | 23.4%    |
+| 8×8         | 343            | 512            | 33.0%    |
+| 16×16       | 2,401          | 4,096          | 41.4%    |
+| 32×32       | 16,807         | 32,768         | 48.7%    |
+| 64×64       | 117,649        | 262,144        | 55.1%    |
+| 128×128     | 823,543        | 2,097,152      | 60.7%    |
+
+### Example
+
+```python
+from strassen_core import multiplication_count
+
+# Compare multiplication counts
+for n in [2, 4, 8, 16, 32, 64]:
+    strassen_mults = multiplication_count(n)
+    standard_mults = n ** 3
+    reduction = 1 - (strassen_mults / standard_mults)
+    
+    print(f"{n:>3}x{n:<3}: {strassen_mults:>10} vs {standard_mults:>10} "
+          f"({reduction*100:>5.1f}% reduction)")
+
+# Output:
+#   2x2  :          7 vs          8 ( 12.5% reduction)
+#   4x4  :         49 vs         64 ( 23.4% reduction)
+#   8x8  :        343 vs        512 ( 33.0% reduction)
+#  16x16 :       2401 vs       4096 ( 41.4% reduction)
+#  32x32 :      16807 vs      32768 ( 48.7% reduction)
+#  64x64 :     117649 vs     262144 ( 55.1% reduction)
+```
+
+---
+
+## Complete Example
+
+```python
+import torch
+from strassen_core import strassen, strassen_2x2, get_coefficients, multiplication_count
+
+# 1. Simple 2x2 multiplication
+A = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
+B = torch.tensor([[5.0, 6.0], [7.0, 8.0]])
+C = strassen_2x2(A, B)
+print("2x2 result:", C)
+
+# 2. Larger matrix with recursive algorithm
+X = torch.randn(16, 16)
+Y = torch.randn(16, 16)
+Z = strassen(X, Y)
+Z_check = X @ Y
+error = (Z - Z_check).abs().max()
+print(f"16x16 error: {error:.2e}")
+
+# 3. Inspect learned coefficients
+U, V, W = get_coefficients()
+print(f"Coefficient shapes: U={U.shape}, V={V.shape}, W={W.shape}")
+print(f"U sparsity: {(U == 0).sum().item()}/{U.numel()} zeros")
+
+# 4. Analyze computational savings
+n = 64
+strassen_ops = multiplication_count(n)
+standard_ops = n ** 3
+print(f"{n}x{n} multiplications: {strassen_ops} vs {standard_ops}")
+print(f"Reduction: {(1 - strassen_ops/standard_ops)*100:.1f}%")
+```
+
+---
+
+## Technical Notes
+
+### Weight Loading
+
+Weights are loaded lazily from `weights.pt` in the same directory as the module. The file contains:
+```python
+{
+  'U': torch.Tensor([7, 4]),  # Input A coefficients
+  'V': torch.Tensor([7, 4]),  # Input B coefficients  
+  'W': torch.Tensor([4, 7])   # Output coefficients
+}
+```
+
+### Numerical Stability
+
+The grokked coefficients are discrete ({-1, 0, 1}), ensuring:
+- No accumulation of floating-point errors
+- Exact integer arithmetic when inputs are integers
+- Maximum error < 1e-5 for floating-point inputs
+
+### Performance Characteristics
+
+- **Small matrices** (n < 64): Standard multiplication is often faster due to optimized BLAS
+- **Large matrices** (n ≥ 64): Strassen shows increasing advantage
+- **Memory**: Recursion creates O(log n) stack depth with O(n²) per level
+- **Cache**: Block recursive structure provides good cache locality
+
+### See Also
+
+- [Training Functions](/api/training) - How the coefficients were discovered
+- [Benchmarks](/api/benchmarks) - Performance comparisons and validation
