@@ -1,0 +1,124 @@
+{
+  "projectType": "ai-ml",
+  "projectName": "Strassen Neural Network Crystallization",
+  "projectDescription": "Engineering algorithmic structure in neural networks through materials science and thermodynamics principles to induce Strassen matrix multiplication",
+  "theme": "aspen",
+  "primaryColor": "#f6be31",
+  "lightColor": "#7c531c",
+  "darkColor": "#040404",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/algorithmic-induction",
+              "concepts/two-phase-protocol",
+              "concepts/thermodynamics",
+              "concepts/phase-transitions"
+            ]
+          },
+          {
+            "group": "Training & Experimentation",
+            "pages": [
+              "training/training-conditions",
+              "training/grokking",
+              "training/hyperparameters",
+              "training/batch-size-effects"
+            ]
+          },
+          {
+            "group": "Metrics & Analysis",
+            "pages": [
+              "metrics/kappa",
+              "metrics/delta",
+              "metrics/local-complexity",
+              "metrics/temperature"
+            ]
+          },
+          {
+            "group": "Verification",
+            "pages": [
+              "verification/discretization",
+              "verification/zero-shot-expansion",
+              "verification/basin-stability"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core Functions",
+            "pages": [
+              "api/strassen-core",
+              "api/training",
+              "api/benchmarks"
+            ]
+          },
+          {
+            "group": "Analysis Tools",
+            "pages": [
+              "api/crystallography",
+              "api/thermodynamics",
+              "api/percolation"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Research",
+        "groups": [
+          {
+            "group": "Results",
+            "pages": [
+              "research/experimental-results",
+              "research/statistical-validation",
+              "research/phase-diagrams"
+            ]
+          },
+          {
+            "group": "Theory",
+            "pages": [
+              "research/algebraic-framework",
+              "research/topology",
+              "research/ricci-flow"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Two-phase protocol for inducing Strassen structure (68% success rate)",
+    "Thermodynamic analysis of neural network training dynamics",
+    "Perfect prediction of algorithmic crystallization using κ metric (AUC 1.000)",
+    "Zero-shot expansion from 2x2 to 64x64 matrices",
+    "Statistical thermodynamics applied to gradient noise and phase transitions",
+    "Basin stability characterization up to 50% sparsity",
+    "Discretization and verification framework for algorithmic learning"
+  ],
+  "publicApiSurface": [
+    "strassen_2x2(A, B) - Core 2x2 Strassen multiplication",
+    "strassen(X, Y) - Recursive Strassen for power-of-2 matrices",
+    "get_coefficients() - Extract learned U, V, W tensors",
+    "multiplication_count(n) - Count Strassen operations for size n",
+    "train_strassen() - Training loop with grokking detection",
+    "compute_kappa() - Gradient covariance condition number",
+    "compute_delta() - Discretization margin measurement",
+    "verify_expansion() - Zero-shot scale verification",
+    "crystallography_analysis() - Phase and microstructure analysis",
+    "boltzmann_experiments() - Thermodynamic measurements"
+  ]
+}
